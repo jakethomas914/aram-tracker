@@ -50,11 +50,17 @@ function boolFromEnv(name: string, fallback: boolean): boolean {
   return raw === "1" || raw === "true" || raw === "yes";
 }
 
+/**
+ * These are deliberately overridable to any absolute path, which Turbopack would
+ * otherwise treat as unbounded filesystem access and trace the entire project
+ * into the server bundle. The tracing opt-out is safe here: nothing is imported
+ * from these directories, they only hold the match database and the workbook.
+ */
 export const DATA_DIR = path.resolve(
-  process.env.DATA_DIR ?? path.join(process.cwd(), "data"),
+  /*turbopackIgnore: true*/ process.env.DATA_DIR ?? path.join(process.cwd(), "data"),
 );
 export const EXPORT_DIR = path.resolve(
-  process.env.EXPORT_DIR ?? path.join(process.cwd(), "exports"),
+  /*turbopackIgnore: true*/ process.env.EXPORT_DIR ?? path.join(process.cwd(), "exports"),
 );
 export const DB_PATH = path.join(DATA_DIR, "db.json");
 export const WORKBOOK_FILENAME = "aram-stats.xlsx";
