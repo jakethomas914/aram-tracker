@@ -31,6 +31,16 @@ function emptyDatabase(): Database {
  */
 let writeChain: Promise<unknown> = Promise.resolve();
 let cache: Database | null = null;
+/** mtime of the file the cache was built from, for cross-process staleness. */
+let cachedMtimeMs = 0;
+
+async function currentMtimeMs(): Promise<number> {
+  try {
+    return (await fs.stat(DB_PATH)).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
 
 async function readFromDisk(): Promise<Database> {
   try {
@@ -54,8 +64,17 @@ async function readFromDisk(): Promise<Database> {
   }
 }
 
+/**
+ * The watcher runs in its own process, so the web app cannot assume its cached
+ * copy is current. Re-reading whenever the file's mtime moves keeps matches the
+ * watcher stored visible without giving up the cache on every request.
+ */
 export async function readDb(): Promise<Database> {
-  if (!cache) cache = await readFromDisk();
+  const mtimeMs = await currentMtimeMs();
+  if (!cache || mtimeMs !== cachedMtimeMs) {
+    cache = await readFromDisk();
+    cachedMtimeMs = mtimeMs;
+  }
   return cache;
 }
 
@@ -64,6 +83,7 @@ async function persist(db: Database): Promise<void> {
   const tmpPath = path.join(DATA_DIR, `.db.${process.pid}.${Date.now()}.tmp`);
   await fs.writeFile(tmpPath, JSON.stringify(db, null, 2), "utf8");
   await fs.rename(tmpPath, DB_PATH);
+  cachedMtimeMs = await currentMtimeMs();
 }
 
 /**
@@ -91,6 +111,7 @@ export function updateDb<T>(
 /** Drop the in-memory copy so the next read hits disk. */
 export function invalidateCache(): void {
   cache = null;
+  cachedMtimeMs = 0;
 }
 
 export async function getSettings(): Promise<Settings> {
