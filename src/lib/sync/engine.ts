@@ -12,7 +12,12 @@ import {
   type SyncSummary,
 } from "@/lib/types";
 
-import { demoMatchHistory, demoRosterMembers } from "./demo";
+import {
+  buildDemoMatch,
+  demoMatchHistory,
+  demoRosterMembers,
+  nextDemoMatchIndex,
+} from "./demo";
 import { normalizeMatch } from "./normalize";
 
 /** Riot rejects startTime values before ARAM match history begins. */
@@ -125,9 +130,20 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
     const fetched: Array<{ match: RawMatch; timeline: RawTimeline | null }> = [];
 
     if (summary.source === "demo") {
-      const historySize =
-        DEMO_HISTORY_SIZE + (options.simulateNewDemoMatch ? countDemoExtras(known) + 1 : 0);
-      const history = demoMatchHistory({ roster, count: historySize });
+      const history = demoMatchHistory({ roster, count: DEMO_HISTORY_SIZE });
+
+      // A simulated game ends a minute ago, so it lands at the top of the list
+      // exactly like a real match the watcher just picked up.
+      if (options.simulateNewDemoMatch) {
+        history.unshift(
+          buildDemoMatch({
+            roster,
+            index: nextDemoMatchIndex([...known]),
+            endedAt: Date.now() - 60_000,
+          }),
+        );
+      }
+
       summary.candidateMatches = history.length;
 
       for (const entry of history) {
@@ -241,15 +257,6 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
     summary.errors.push(message);
     return await finish(summary, message);
   }
-}
-
-function countDemoExtras(known: Set<string>): number {
-  let extras = 0;
-  for (const id of known) {
-    const index = Number.parseInt(id.replace(/^DEMO_NA1_/, ""), 10);
-    if (Number.isFinite(index) && index >= DEMO_HISTORY_SIZE) extras += 1;
-  }
-  return extras;
 }
 
 async function finish(summary: SyncSummary, error: string | null = null): Promise<SyncSummary> {

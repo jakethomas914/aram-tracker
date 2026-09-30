@@ -324,22 +324,22 @@ export function buildDuoSummaries(matches: MatchRecord[]): DuoSummary[] {
   const pairs = new Map<string, { games: number; wins: number }>();
 
   for (const match of matches) {
-    const tracked = trackedParticipants(match).filter(
-      (participant) => participant.teamId === trackedParticipants(match)[0]?.teamId,
+    const tracked = trackedParticipants(match);
+    // Only count a pair when they were actually on the same side.
+    const sameTeam = tracked.filter(
+      (participant) => participant.teamId === tracked[0]?.teamId,
     );
-    const aliases = tracked
-      .map((participant) => ({
-        alias: participant.alias ?? participant.riotId,
-        win: participant.win,
-      }))
-      .sort((a, b) => a.alias.localeCompare(b.alias));
+    const teammates = sameTeam
+      .map((participant) => participant.alias ?? participant.riotId)
+      .sort((a, b) => a.localeCompare(b));
+    const won = sameTeam[0]?.win ?? false;
 
-    for (let i = 0; i < aliases.length; i += 1) {
-      for (let j = i + 1; j < aliases.length; j += 1) {
-        const key = `${aliases[i].alias}\u0000${aliases[j].alias}`;
+    for (let i = 0; i < teammates.length; i += 1) {
+      for (let j = i + 1; j < teammates.length; j += 1) {
+        const key = `${teammates[i]}\u0000${teammates[j]}`;
         const entry = pairs.get(key) ?? { games: 0, wins: 0 };
         entry.games += 1;
-        if (aliases[i].win) entry.wins += 1;
+        if (won) entry.wins += 1;
         pairs.set(key, entry);
       }
     }

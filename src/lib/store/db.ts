@@ -4,6 +4,8 @@ import path from "node:path";
 import { DATA_DIR, DB_PATH, defaultSettings } from "@/lib/config";
 import type { Database, MatchRecord, RosterMember, Settings, SyncState } from "@/lib/types";
 
+import { hydrateMatches } from "./hydrate";
+
 const DB_VERSION = 1;
 
 function emptyDatabase(): Database {
@@ -97,7 +99,15 @@ export async function getSettings(): Promise<Settings> {
 
 export async function saveSettings(patch: Partial<Settings>): Promise<Settings> {
   return updateDb((db) => {
+    const loosened =
+      patch.minGroupSize !== undefined && patch.minGroupSize < db.settings.minGroupSize;
+
     db.settings = { ...db.settings, ...patch };
+
+    // Matches skipped under a stricter threshold can qualify now, and the skip
+    // list would otherwise stop us from ever fetching them again.
+    if (loosened) db.skippedMatchIds = [];
+
     return db.settings;
   });
 }
@@ -119,6 +129,9 @@ export async function upsertRosterMember(member: RosterMember): Promise<RosterMe
     } else {
       db.roster.push(member);
     }
+    // A match skipped for having too few friends in it may now qualify, so let
+    // the next sync re-evaluate everything it previously passed over.
+    db.skippedMatchIds = [];
     return db.roster;
   });
 }
@@ -126,15 +139,18 @@ export async function upsertRosterMember(member: RosterMember): Promise<RosterMe
 export async function removeRosterMember(puuid: string): Promise<RosterMember[]> {
   return updateDb((db) => {
     db.roster = db.roster.filter((member) => member.puuid !== puuid);
+    db.skippedMatchIds = [];
     return db.roster;
   });
 }
 
+/** Stored matches, newest first, with the current roster applied. */
 export async function getMatches(): Promise<MatchRecord[]> {
   const db = await readDb();
-  return Object.values(db.matches).sort(
+  const ordered = Object.values(db.matches).sort(
     (a, b) => b.gameStartTimestamp - a.gameStartTimestamp,
   );
+  return hydrateMatches(ordered, db.roster);
 }
 
 export async function setSyncState(patch: Partial<SyncState>): Promise<SyncState> {

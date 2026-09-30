@@ -442,14 +442,11 @@ export function demoMatchHistory(options: {
   return history;
 }
 
+/** Next unused demo match index, so a simulated game never collides. */
 export function nextDemoMatchIndex(existingMatchIds: string[]): number {
   const indices = existingMatchIds
     .filter((id) => id.startsWith(DEMO_PREFIX))
     .map((id) => Number.parseInt(id.slice(DEMO_PREFIX.length), 10))
     .filter((value) => Number.isFinite(value));
   return indices.length > 0 ? Math.max(...indices) + 1 : 0;
-}
-
-export function isDemoMatchId(matchId: string): boolean {
-  return matchId.startsWith(DEMO_PREFIX);
 }
