@@ -28,6 +28,14 @@ import { Switch } from "@/components/ui/switch";
 import type { DashboardState } from "@/lib/dashboard";
 import type { RegionalRoute, Settings } from "@/lib/types";
 
+/**
+ * Long, unbreakable strings like API keys and absolute paths sit inside grid and
+ * flex children, whose default `min-width: auto` lets them push the whole card
+ * wider than a phone viewport. Wrapping plus `min-w-0` keeps them contained.
+ */
+const CODE_BLOCK =
+  "bg-muted text-muted-foreground mt-1 w-full min-w-0 rounded-md p-3 text-xs break-all whitespace-pre-wrap";
+
 const REGIONS: Array<{ value: RegionalRoute; label: string }> = [
   { value: "americas", label: "Americas (NA, BR, LAN, LAS)" },
   { value: "europe", label: "Europe (EUW, EUNE, TR, RU, ME)" },
@@ -245,7 +253,7 @@ export function SettingsTab({
                 the exact Match-V5 shape. To track your real games, put a key in{" "}
                 <code>.env.local</code> and restart:
               </p>
-              <pre className="bg-muted text-muted-foreground mt-1 w-full overflow-x-auto rounded-md p-3 text-xs">
+              <pre className={CODE_BLOCK}>
                 RIOT_API_KEY=RGAPI-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
               </pre>
               <p>
@@ -279,16 +287,12 @@ export function SettingsTab({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <pre className="bg-muted text-muted-foreground overflow-x-auto rounded-md p-3 text-xs">
-              npm run watch
-            </pre>
+            <pre className={CODE_BLOCK}>npm run watch</pre>
             <p className="text-muted-foreground text-xs">
               Current interval: every {draft.watchIntervalSeconds} seconds. The
               workbook is written to:
             </p>
-            <pre className="bg-muted text-muted-foreground overflow-x-auto rounded-md p-3 text-xs">
-              {state.workbookPath}
-            </pre>
+            <pre className={CODE_BLOCK}>{state.workbookPath}</pre>
           </CardContent>
         </Card>
 
