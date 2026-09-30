@@ -21,7 +21,8 @@ function log(message: string): void {
   process.stdout.write(`[${new Date().toISOString()}] ${message}\n`);
 }
 
-async function once(): Promise<void> {
+/** Returns true when matches are still waiting to be backfilled. */
+async function once(): Promise<boolean> {
   // Another process (the web app) may have written the database since last pass.
   invalidateCache();
 
@@ -39,11 +40,16 @@ async function once(): Promise<void> {
       );
     }
 
+    if (summary.pendingMatches > 0) {
+      log(`${summary.pendingMatches} match(es) still to backfill`);
+    }
+
     for (const error of summary.errors) log(`warning: ${error}`);
+    return summary.pendingMatches > 0;
   } catch (error) {
     if (error instanceof SyncBusyError) {
       log("a sync is already running, skipping this pass");
-      return;
+      return false;
     }
     throw error;
   }
@@ -62,8 +68,9 @@ async function main(): Promise<void> {
   }
 
   while (!stopping) {
+    let backfilling = false;
     try {
-      await once();
+      backfilling = await once();
     } catch (error) {
       log(`sync error: ${error instanceof Error ? error.message : String(error)}`);
       // Clear the running flag so a crashed pass does not wedge the next one.
@@ -71,8 +78,10 @@ async function main(): Promise<void> {
     }
 
     const settings = await getSettings();
-    const intervalMs = settings.watchIntervalSeconds * 1000;
-    log(`sleeping ${settings.watchIntervalSeconds}s`);
+    // Keep going promptly while catching up on history, then settle into the
+    // configured interval once we are only watching for new games.
+    const intervalMs = backfilling ? 2_000 : settings.watchIntervalSeconds * 1000;
+    log(backfilling ? "continuing backfill" : `sleeping ${settings.watchIntervalSeconds}s`);
 
     // Wake up early when the process is asked to stop.
     const step = 1000;

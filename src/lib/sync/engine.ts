@@ -100,6 +100,7 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
     groupMatchesAdded: 0,
     skippedNonGroup: 0,
     skippedNonAram: 0,
+    pendingMatches: 0,
     addedMatchIds: [],
     errors: [],
     workbookPath: null,
@@ -146,8 +147,10 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
 
       summary.candidateMatches = history.length;
 
-      for (const entry of history) {
-        if (known.has(entry.match.metadata.matchId)) continue;
+      const unseen = history.filter((entry) => !known.has(entry.match.metadata.matchId));
+      summary.pendingMatches = Math.max(0, unseen.length - settings.maxMatchesPerSync);
+
+      for (const entry of unseen.slice(0, settings.maxMatchesPerSync)) {
         fetched.push({
           match: entry.match,
           timeline: settings.fetchTimelines ? entry.timeline : null,
@@ -180,8 +183,14 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
       }
       summary.candidateMatches = candidateIds.size;
 
-      for (const matchId of candidateIds) {
-        if (known.has(matchId)) continue;
+      // Match IDs sort lexicographically in chronological order within a
+      // platform, so newest-first means recent games land before the backfill.
+      const unseen = [...candidateIds]
+        .filter((matchId) => !known.has(matchId))
+        .sort((a, b) => b.localeCompare(a));
+      summary.pendingMatches = Math.max(0, unseen.length - settings.maxMatchesPerSync);
+
+      for (const matchId of unseen.slice(0, settings.maxMatchesPerSync)) {
         try {
           const match = await client.getMatch(matchId);
           let timeline: RawTimeline | null = null;

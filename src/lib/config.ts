@@ -76,6 +76,7 @@ export function defaultSettings(): Settings {
     minGroupSize: Math.max(1, intFromEnv("ARAM_MIN_GROUP_SIZE", 2)),
     lookbackDays: Math.max(1, intFromEnv("ARAM_LOOKBACK_DAYS", 90)),
     matchesPerPlayer: Math.min(100, Math.max(1, intFromEnv("ARAM_MATCHES_PER_PLAYER", 40))),
+    maxMatchesPerSync: Math.max(1, intFromEnv("ARAM_MAX_MATCHES_PER_SYNC", 30)),
     fetchTimelines: boolFromEnv("ARAM_FETCH_TIMELINES", true),
     watchIntervalSeconds: Math.max(30, intFromEnv("ARAM_WATCH_INTERVAL_SECONDS", 300)),
     autoWriteWorkbook: boolFromEnv("ARAM_AUTO_WRITE_WORKBOOK", true),

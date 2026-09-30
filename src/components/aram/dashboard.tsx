@@ -82,14 +82,19 @@ export function Dashboard({ initialState }: { initialState: DashboardState }) {
       const { summary } = payload;
 
       if (summary.groupMatchesAdded > 0) {
+        const backfill =
+          summary.pendingMatches > 0
+            ? ` ${summary.pendingMatches} more to go — sync again to continue.`
+            : "";
         toast.success(
           `Added ${summary.groupMatchesAdded} ARAM ${
             summary.groupMatchesAdded === 1 ? "game" : "games"
           }`,
           {
-            description: summary.workbookPath
-              ? `Spreadsheet rewritten at ${summary.workbookPath}`
-              : "Download the workbook to get the updated sheets.",
+            description:
+              (summary.workbookPath
+                ? `Spreadsheet rewritten at ${summary.workbookPath}.`
+                : "Download the workbook to get the updated sheets.") + backfill,
           },
         );
       } else if (summary.errors.length > 0) {

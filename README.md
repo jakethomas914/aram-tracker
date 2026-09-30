@@ -82,6 +82,12 @@ The watcher re-checks match history on an interval (default 300s, editable in th
 Settings tab), stores any new group ARAM, and rewrites the workbook. Leave it
 running next to the dev server and the spreadsheet stays current on its own.
 
+Each pass fetches at most `maxMatchesPerSync` matches (default 30) so no single
+sync runs long under Riot's rate limits. When there is history left to backfill the
+watcher loops straight into the next pass instead of sleeping, so it catches up
+quickly and then settles into the normal interval — which makes it the easiest way
+to do the initial import of a long match history.
+
 One-shot equivalents, for cron:
 
 ```bash
@@ -121,6 +127,7 @@ seedable from the environment. See `.env.example` for the full list.
 | Friends required        | `ARAM_MIN_GROUP_SIZE`         | `2`        | Minimum roster members for a match to count   |
 | Look back               | `ARAM_LOOKBACK_DAYS`          | `90`       | How far back match history is pulled          |
 | Match IDs per friend    | `ARAM_MATCHES_PER_PLAYER`     | `40`       | Riot caps this at 100                         |
+| Matches per sync pass   | `ARAM_MAX_MATCHES_PER_SYNC`   | `30`       | Keeps a large first backfill from running long |
 | Fetch ability order     | `ARAM_FETCH_TIMELINES`        | `true`     | One extra timeline request per match          |
 | Watcher interval        | `ARAM_WATCH_INTERVAL_SECONDS` | `300`      | Seconds between polls                         |
 | Auto-write the workbook | `ARAM_AUTO_WRITE_WORKBOOK`    | `true`     | Rewrite the `.xlsx` whenever matches are found |

@@ -12,6 +12,7 @@ const settingsSchema = z.object({
   minGroupSize: z.number().int().min(1).max(5).optional(),
   lookbackDays: z.number().int().min(1).max(3650).optional(),
   matchesPerPlayer: z.number().int().min(1).max(100).optional(),
+  maxMatchesPerSync: z.number().int().min(1).max(500).optional(),
   fetchTimelines: z.boolean().optional(),
   watchIntervalSeconds: z.number().int().min(30).max(86_400).optional(),
   autoWriteWorkbook: z.boolean().optional(),

@@ -162,6 +162,23 @@ export function SettingsTab({
               <p className="text-muted-foreground text-xs">Riot caps this at 100.</p>
             </div>
             <div className="space-y-2">
+              <Label htmlFor="max-per-sync">Matches fetched per sync</Label>
+              <Input
+                id="max-per-sync"
+                type="number"
+                min={1}
+                max={500}
+                value={draft.maxMatchesPerSync}
+                onChange={(event) =>
+                  update("maxMatchesPerSync", Number(event.target.value) || 1)
+                }
+              />
+              <p className="text-muted-foreground text-xs">
+                Keeps a big first backfill from running long; leftovers are picked up
+                on the next pass.
+              </p>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="interval">Watcher interval (seconds)</Label>
               <Input
                 id="interval"

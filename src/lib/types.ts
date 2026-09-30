@@ -135,6 +135,11 @@ export interface Settings {
   lookbackDays: number;
   /** Match IDs pulled per roster member per sync. */
   matchesPerPlayer: number;
+  /**
+   * Cap on match details fetched in one sync pass. Rate limits make a large
+   * first backfill slow, so each pass stays short and the next one continues.
+   */
+  maxMatchesPerSync: number;
   /** Fetch the timeline for ability order (one extra request per match). */
   fetchTimelines: boolean;
   /** Watcher poll interval, in seconds. */
@@ -154,6 +159,8 @@ export interface SyncSummary {
   groupMatchesAdded: number;
   skippedNonGroup: number;
   skippedNonAram: number;
+  /** Known-but-unfetched matches left over because of maxMatchesPerSync. */
+  pendingMatches: number;
   addedMatchIds: string[];
   errors: string[];
   workbookPath: string | null;
