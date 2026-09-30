@@ -11,15 +11,26 @@ import { DATA_DIR } from "@/lib/config";
  * The bundle is cached on disk; if the CDN is unreachable we degrade to
  * "Item 3153"-style labels rather than failing a sync.
  */
+/** One rune tree, split into the keystone slot and the minor-rune slots. */
+export interface RuneTree {
+  style: number;
+  keystones: number[];
+  minor: number[];
+}
+
 interface StaticBundle {
+  /** Bumped when the shape below changes, which invalidates old caches. */
+  schema: number;
   version: string;
   fetchedAt: number;
   items: Record<string, string>;
   summonerSpells: Record<string, string>;
   runes: Record<string, string>;
   runeStyles: Record<string, string>;
+  runeTrees: RuneTree[];
 }
 
+const CACHE_SCHEMA = 2;
 const CACHE_PATH = path.join(DATA_DIR, "ddragon-cache.json");
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 10_000;
@@ -39,6 +50,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 async function readCache(): Promise<StaticBundle | null> {
   try {
     const parsed = JSON.parse(await fs.readFile(CACHE_PATH, "utf8")) as StaticBundle;
+    if (parsed.schema !== CACHE_SCHEMA) return null;
     return parsed.items && parsed.runes ? parsed : null;
   } catch {
     return null;
@@ -85,14 +97,30 @@ async function downloadBundle(): Promise<StaticBundle> {
 
   const runes: Record<string, string> = {};
   const runeStyles: Record<string, string> = {};
+  const runeTrees: RuneTree[] = [];
   for (const style of runeData) {
     runeStyles[String(style.id)] = style.name;
     for (const slot of style.slots) {
       for (const rune of slot.runes) runes[String(rune.id)] = rune.name;
     }
+    runeTrees.push({
+      style: style.id,
+      // The first slot holds keystones; the rest are the minor rows.
+      keystones: (style.slots[0]?.runes ?? []).map((rune) => rune.id),
+      minor: style.slots.slice(1).flatMap((slot) => slot.runes.map((rune) => rune.id)),
+    });
   }
 
-  return { version, fetchedAt: Date.now(), items, summonerSpells, runes, runeStyles };
+  return {
+    schema: CACHE_SCHEMA,
+    version,
+    fetchedAt: Date.now(),
+    items,
+    summonerSpells,
+    runes,
+    runeStyles,
+    runeTrees,
+  };
 }
 
 export async function loadStaticData(): Promise<StaticBundle | null> {
@@ -138,6 +166,12 @@ const STAT_PERKS: Record<string, string> = {
   "5011": "Health",
   "5013": "Tenacity",
 };
+
+/** Rune trees for the current patch, or null when the CDN is unreachable. */
+export async function loadRuneTrees(): Promise<RuneTree[] | null> {
+  const bundle = await loadStaticData();
+  return bundle?.runeTrees?.length ? bundle.runeTrees : null;
+}
 
 export interface NameResolver {
   version: string | null;

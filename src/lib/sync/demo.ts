@@ -1,3 +1,4 @@
+import type { RuneTree } from "@/lib/riot/ddragon";
 import type { RawMatch, RawParticipant, RawTimeline, RosterMember } from "@/lib/types";
 import { ARAM_QUEUE_ID } from "@/lib/types";
 
@@ -71,10 +72,11 @@ const TRINKETS = [3340, 3363, 3364];
 const SUMMONER_SPELLS = [4, 32, 1, 3, 6, 7, 11, 12, 13, 14, 21];
 
 /**
- * Real rune-tree IDs so generated pages are internally consistent: a keystone
- * and its minor runes always come from the tree they belong to.
+ * Fallback rune trees, used only when Data Dragon is unreachable. Live trees are
+ * passed in instead, which keeps generated pages valid as patches add and retire
+ * runes. Either way a keystone and its minor runes come from the same tree.
  */
-const RUNE_TREES = [
+const FALLBACK_RUNE_TREES: RuneTree[] = [
   {
     style: 8000, // Precision
     keystones: [8005, 8008, 8021, 8010],
@@ -158,6 +160,7 @@ function buildParticipant(
     durationSeconds: number;
     /** 0.6 = below average game, 1.6 = smurf game. */
     skill: number;
+    runeTrees: RuneTree[];
   },
 ): RawParticipant {
   const [championId, championName] = pick(random, CHAMPIONS);
@@ -186,10 +189,10 @@ function buildParticipant(
   const gold = Math.round(minutes * (450 + random() * 220) * (0.85 + options.skill * 0.15));
 
   const items = [...pickMany(random, itemPool, 5), pick(random, BOOTS)];
-  const primaryTree = pick(random, RUNE_TREES);
+  const primaryTree = pick(random, options.runeTrees);
   const secondaryTree = pick(
     random,
-    RUNE_TREES.filter((tree) => tree.style !== primaryTree.style),
+    options.runeTrees.filter((tree) => tree.style !== primaryTree.style),
   );
   const keystone = pick(random, primaryTree.keystones);
 
@@ -292,6 +295,8 @@ export interface DemoMatchOptions {
   endedAt: number;
   /** Force how many roster members are in the lobby. */
   groupSize?: number;
+  /** Live rune trees from Data Dragon; falls back to a bundled snapshot. */
+  runeTrees?: RuneTree[] | null;
 }
 
 export function buildDemoMatch(options: DemoMatchOptions): {
@@ -300,6 +305,7 @@ export function buildDemoMatch(options: DemoMatchOptions): {
 } {
   const matchId = `${DEMO_PREFIX}${options.index}`;
   const random = mulberry32(hashString(matchId));
+  const runeTrees = options.runeTrees?.length ? options.runeTrees : FALLBACK_RUNE_TREES;
 
   const duration = Math.round(840 + random() * 780); // 14–27 minutes
   const startedAt = options.endedAt - duration * 1000;
@@ -329,6 +335,7 @@ export function buildDemoMatch(options: DemoMatchOptions): {
         durationSeconds: duration,
         // A stable per-player skill rating keeps the leaderboard meaningful.
         skill: 0.75 + (hashString(member.puuid) % 90) / 100,
+        runeTrees,
       }),
     );
   }
@@ -346,6 +353,7 @@ export function buildDemoMatch(options: DemoMatchOptions): {
         win: teamId === groupTeamId ? groupWin : !groupWin,
         durationSeconds: duration,
         skill: 0.7 + random() * 0.8,
+        runeTrees,
       }),
     );
   }
@@ -426,6 +434,7 @@ export function demoMatchHistory(options: {
   roster: RosterMember[];
   count: number;
   now?: number;
+  runeTrees?: RuneTree[] | null;
 }): Array<{ match: RawMatch; timeline: RawTimeline }> {
   const now = options.now ?? Date.now();
   const history: Array<{ match: RawMatch; timeline: RawTimeline }> = [];
@@ -436,7 +445,14 @@ export function demoMatchHistory(options: {
     const sessionGap = Math.floor(index / 3) * (26 + random() * 40) * 3600 * 1000;
     const withinSession = (index % 3) * (22 * 60 * 1000);
     const endedAt = Math.round(now - sessionGap - withinSession - 15 * 60 * 1000);
-    history.push(buildDemoMatch({ roster: options.roster, index, endedAt }));
+    history.push(
+      buildDemoMatch({
+        roster: options.roster,
+        index,
+        endedAt,
+        runeTrees: options.runeTrees,
+      }),
+    );
   }
 
   return history;

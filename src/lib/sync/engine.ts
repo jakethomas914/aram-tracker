@@ -1,7 +1,7 @@
 import { EXPORT_DIR, WORKBOOK_FILENAME, isDemoMode } from "@/lib/config";
 import { writeWorkbookToDisk } from "@/lib/excel/workbook";
 import { MissingApiKeyError, RiotClient } from "@/lib/riot/client";
-import { createNameResolver } from "@/lib/riot/ddragon";
+import { createNameResolver, loadRuneTrees } from "@/lib/riot/ddragon";
 import { readDb, updateDb } from "@/lib/store/db";
 import {
   ARAM_QUEUE_ID,
@@ -135,7 +135,14 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
     const fetched: Array<{ match: RawMatch; timeline: RawTimeline | null }> = [];
 
     if (summary.source === "demo") {
-      const history = demoMatchHistory({ roster, count: DEMO_HISTORY_SIZE });
+      // Generating pages from the live trees keeps demo runes valid as patches
+      // add and retire them.
+      const runeTrees = await loadRuneTrees();
+      const history = demoMatchHistory({
+        roster,
+        count: DEMO_HISTORY_SIZE,
+        runeTrees,
+      });
 
       // A simulated game ends a minute ago, so it lands at the top of the list
       // exactly like a real match the watcher just picked up.
@@ -145,6 +152,7 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
             roster,
             index: nextDemoMatchIndex([...known]),
             endedAt: Date.now() - 60_000,
+            runeTrees,
           }),
         );
       }
