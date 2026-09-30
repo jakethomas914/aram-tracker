@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import { ARAM_QUEUES, DEFAULT_TRACKED_QUEUE_IDS } from "./types";
 import type { RegionalRoute, Settings } from "./types";
 
 const REGIONAL_ROUTES: RegionalRoute[] = ["americas", "europe", "asia", "sea"];
@@ -51,6 +52,21 @@ function boolFromEnv(name: string, fallback: boolean): boolean {
 }
 
 /**
+ * ARAM_QUEUE_IDS="2400,450" narrows or widens the tracked queues. Unknown IDs are
+ * dropped so a typo cannot silently turn off tracking for every queue.
+ */
+function trackedQueueIdsFromEnv(): number[] {
+  const raw = process.env.ARAM_QUEUE_IDS?.trim();
+  if (!raw) return [...DEFAULT_TRACKED_QUEUE_IDS];
+  const known = new Set(ARAM_QUEUES.map((queue) => queue.id));
+  const parsed = raw
+    .split(",")
+    .map((entry) => Number.parseInt(entry.trim(), 10))
+    .filter((id) => Number.isFinite(id) && known.has(id));
+  return parsed.length > 0 ? [...new Set(parsed)] : [...DEFAULT_TRACKED_QUEUE_IDS];
+}
+
+/**
  * These are deliberately overridable to any absolute path, which Turbopack would
  * otherwise treat as unbounded filesystem access and trace the entire project
  * into the server bundle. The tracing opt-out is safe here: nothing is imported
@@ -79,6 +95,7 @@ export function isDemoMode(): boolean {
 export function defaultSettings(): Settings {
   return {
     region: parseRegion(process.env.RIOT_REGION),
+    trackedQueueIds: trackedQueueIdsFromEnv(),
     minGroupSize: Math.max(1, intFromEnv("ARAM_MIN_GROUP_SIZE", 2)),
     lookbackDays: Math.max(1, intFromEnv("ARAM_LOOKBACK_DAYS", 90)),
     matchesPerPlayer: Math.min(100, Math.max(1, intFromEnv("ARAM_MATCHES_PER_PLAYER", 40))),

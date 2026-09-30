@@ -6,7 +6,54 @@
  * UI and the Excel export are built on.
  */
 
-export const ARAM_QUEUE_ID = 450;
+/**
+ * The ARAM family of queues, with IDs taken from Riot's published queue list
+ * (https://static.developer.riotgames.com/docs/lol/queues.json). Everything in
+ * the app keys off `queueId` rather than `gameMode`, because Mayhem is ARAM with
+ * modifiers and Riot may report the same `gameMode` string for both.
+ */
+export interface QueueDefinition {
+  id: number;
+  /** Stable key used for grouping and for Excel sheet rows. */
+  key: string;
+  /** Short label shown in the UI and the spreadsheet. */
+  label: string;
+  /** Riot's own description of the queue. */
+  description: string;
+}
+
+export const ARAM_QUEUES: QueueDefinition[] = [
+  {
+    id: 2400,
+    key: "mayhem",
+    label: "ARAM: Mayhem",
+    description: "ARAM: Mayhem on Howling Abyss",
+  },
+  { id: 450, key: "aram", label: "ARAM", description: "5v5 ARAM on Howling Abyss" },
+  {
+    id: 720,
+    key: "aram-clash",
+    label: "ARAM Clash",
+    description: "ARAM Clash on Howling Abyss",
+  },
+  {
+    id: 100,
+    key: "butchers-bridge",
+    label: "ARAM (Butcher's Bridge)",
+    description: "5v5 ARAM on Butcher's Bridge",
+  },
+];
+
+/** Mayhem first: it is the mode this tracker is pointed at primarily. */
+export const DEFAULT_TRACKED_QUEUE_IDS = [2400, 450];
+
+export function queueById(queueId: number): QueueDefinition | undefined {
+  return ARAM_QUEUES.find((queue) => queue.id === queueId);
+}
+
+export function queueLabel(queueId: number): string {
+  return queueById(queueId)?.label ?? `Queue ${queueId}`;
+}
 
 /** Regional routing values used by account-v1 and match-v5. */
 export type RegionalRoute = "americas" | "europe" | "asia" | "sea";
@@ -129,6 +176,11 @@ export interface MatchRecord {
 
 export interface Settings {
   region: RegionalRoute;
+  /**
+   * Queues pulled from match history and kept. Defaults to ARAM: Mayhem (2400)
+   * and ARAM (450); every match is checked against this list by `queueId`.
+   */
+  trackedQueueIds: number[];
   /** A match only counts as a "group game" with at least this many roster members in it. */
   minGroupSize: number;
   /** How far back to look when pulling match history, in days. */
@@ -158,7 +210,10 @@ export interface SyncSummary {
   newMatchesFetched: number;
   groupMatchesAdded: number;
   skippedNonGroup: number;
-  skippedNonAram: number;
+  /** Matches dropped because their queueId is not in `settings.trackedQueueIds`. */
+  skippedWrongQueue: number;
+  /** Matches added in this pass, split by queue ID. */
+  addedByQueue: Record<string, number>;
   /** Known-but-unfetched matches left over because of maxMatchesPerSync. */
   pendingMatches: number;
   addedMatchIds: string[];
@@ -179,7 +234,7 @@ export interface Database {
   settings: Settings;
   roster: RosterMember[];
   matches: Record<string, MatchRecord>;
-  /** Seen match IDs that are not tracked group ARAMs, so we never refetch them. */
+  /** Seen match IDs that are not tracked group games, so we never refetch them. */
   skippedMatchIds: string[];
   syncState: SyncState;
 }

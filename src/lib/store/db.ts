@@ -122,12 +122,16 @@ export async function saveSettings(patch: Partial<Settings>): Promise<Settings> 
   return updateDb((db) => {
     const loosened =
       patch.minGroupSize !== undefined && patch.minGroupSize < db.settings.minGroupSize;
+    const queueAdded =
+      patch.trackedQueueIds !== undefined &&
+      patch.trackedQueueIds.some((queueId) => !db.settings.trackedQueueIds.includes(queueId));
 
     db.settings = { ...db.settings, ...patch };
 
-    // Matches skipped under a stricter threshold can qualify now, and the skip
-    // list would otherwise stop us from ever fetching them again.
-    if (loosened) db.skippedMatchIds = [];
+    // Matches skipped under a stricter threshold, or because their queue was not
+    // being tracked, can qualify now, and the skip list would otherwise stop us
+    // from ever fetching them again.
+    if (loosened || queueAdded) db.skippedMatchIds = [];
 
     return db.settings;
   });
@@ -165,12 +169,18 @@ export async function removeRosterMember(puuid: string): Promise<RosterMember[]>
   });
 }
 
-/** Stored matches, newest first, with the current roster applied. */
+/**
+ * Stored matches, newest first, with the current roster applied and restricted to
+ * the tracked queues. Filtering on read rather than deleting means untracking a
+ * queue hides its games from every report without discarding them, and ticking it
+ * back on restores the history immediately.
+ */
 export async function getMatches(): Promise<MatchRecord[]> {
   const db = await readDb();
-  const ordered = Object.values(db.matches).sort(
-    (a, b) => b.gameStartTimestamp - a.gameStartTimestamp,
-  );
+  const tracked = new Set(db.settings.trackedQueueIds ?? []);
+  const ordered = Object.values(db.matches)
+    .filter((match) => tracked.size === 0 || tracked.has(match.queueId))
+    .sort((a, b) => b.gameStartTimestamp - a.gameStartTimestamp);
   return hydrateMatches(ordered, db.roster);
 }
 

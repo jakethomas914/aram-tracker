@@ -6,22 +6,25 @@ import {
   buildDuoSummaries,
   buildGroupOverview,
   buildPlayerSummaries,
+  buildQueueSummaries,
   buildRecords,
   type ChampionSummary,
   type DuoSummary,
   type GroupOverview,
   type PlayerSummary,
+  type QueueSummary,
   type RecordEntry,
 } from "@/lib/stats/aggregate";
 import type { MatchRecord, RosterMember, Settings, SyncState } from "@/lib/types";
-import { ARAM_QUEUE_ID } from "@/lib/types";
+import { ARAM_QUEUES } from "@/lib/types";
 
 /** Matches sent to the browser; aggregates still cover the full history. */
 const MATCH_PAGE_SIZE = 120;
 
 export interface DashboardState {
   demoMode: boolean;
-  aramQueueId: number;
+  /** Every queue the tracker knows how to follow, for the settings picker. */
+  availableQueues: typeof ARAM_QUEUES;
   workbookPath: string;
   /** Data Dragon patch used for champion portraits; null when the CDN is unreachable. */
   ddragonVersion: string | null;
@@ -29,7 +32,10 @@ export interface DashboardState {
   roster: RosterMember[];
   syncState: SyncState;
   overview: GroupOverview;
+  queues: QueueSummary[];
   players: PlayerSummary[];
+  /** The same player totals recomputed inside each queue, for the mode filter. */
+  playersByQueue: Array<{ queueId: number; label: string; players: PlayerSummary[] }>;
   champions: ChampionSummary[];
   duos: DuoSummary[];
   records: RecordEntry[];
@@ -44,16 +50,26 @@ export async function getDashboardState(): Promise<DashboardState> {
     loadStaticData(),
   ]);
 
+  const queues = buildQueueSummaries(matches);
+
   return {
     demoMode: isDemoMode(),
-    aramQueueId: ARAM_QUEUE_ID,
+    availableQueues: ARAM_QUEUES,
     workbookPath: `${EXPORT_DIR}/${WORKBOOK_FILENAME}`,
     ddragonVersion: staticData?.version ?? null,
     settings: db.settings,
     roster: db.roster,
     syncState: db.syncState,
     overview: buildGroupOverview(matches),
+    queues,
     players: buildPlayerSummaries(matches),
+    playersByQueue: queues.map((queue) => ({
+      queueId: queue.queueId,
+      label: queue.label,
+      players: buildPlayerSummaries(
+        matches.filter((match) => match.queueId === queue.queueId),
+      ),
+    })),
     champions: buildChampionSummaries(matches),
     duos: buildDuoSummaries(matches),
     records: buildRecords(matches),

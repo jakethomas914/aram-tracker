@@ -39,7 +39,25 @@ import {
   formatPercent,
 } from "@/lib/format";
 import type { MatchRecord, ParticipantRecord } from "@/lib/types";
+import { queueLabel } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+/** Mayhem gets its own colour so the two modes are separable at a glance. */
+export function QueueBadge({ queueId }: { queueId: number }) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "whitespace-nowrap font-medium",
+        queueId === 2400
+          ? "border-primary/40 bg-primary/10 text-primary"
+          : "border-border text-muted-foreground",
+      )}
+    >
+      {queueLabel(queueId)}
+    </Badge>
+  );
+}
 
 export function ResultPill({ win }: { win: boolean | null }) {
   if (win === null) {
@@ -78,7 +96,19 @@ export function MatchesTab({
   const [query, setQuery] = useState("");
   const [playerFilter, setPlayerFilter] = useState("all");
   const [resultFilter, setResultFilter] = useState("all");
+  const [queueFilter, setQueueFilter] = useState("all");
   const [selected, setSelected] = useState<MatchRecord | null>(null);
+
+  // Only offer queues that actually appear in the stored history.
+  const queueOptions = useMemo(() => {
+    const seen = new Map<number, number>();
+    for (const match of matches) {
+      seen.set(match.queueId, (seen.get(match.queueId) ?? 0) + 1);
+    }
+    return [...seen.entries()]
+      .map(([queueId, games]) => ({ queueId, games, label: queueLabel(queueId) }))
+      .sort((a, b) => b.games - a.games);
+  }, [matches]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -88,6 +118,7 @@ export function MatchesTab({
       if (playerFilter !== "all") {
         if (!tracked.some((participant) => participant.alias === playerFilter)) return false;
       }
+      if (queueFilter !== "all" && String(match.queueId) !== queueFilter) return false;
       if (resultFilter === "win" && match.groupWin !== true) return false;
       if (resultFilter === "loss" && match.groupWin !== false) return false;
       if (!needle) return true;
@@ -101,14 +132,14 @@ export function MatchesTab({
         )
       );
     });
-  }, [matches, playerFilter, query, resultFilter]);
+  }, [matches, playerFilter, query, queueFilter, resultFilter]);
 
   if (matches.length === 0) {
     return (
       <EmptyState
         icon={<Swords className="size-8" />}
-        title="No ARAM games stored yet"
-        description="Run a sync to pull every queueId 450 game your group has played. Matches your friends played without each other are skipped automatically."
+        title="No games stored yet"
+        description="Run a sync to pull every ARAM: Mayhem and ARAM game your group has played. Matches your friends played without each other are skipped automatically."
       />
     );
   }
@@ -122,7 +153,23 @@ export function MatchesTab({
           placeholder="Search champion, friend, or match ID"
           className="sm:max-w-xs"
         />
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
+          <Select
+            value={queueFilter}
+            onValueChange={(value) => setQueueFilter(value ?? "all")}
+          >
+            <SelectTrigger className="w-[190px]">
+              <SelectValue placeholder="Any mode" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Any mode</SelectItem>
+              {queueOptions.map((option) => (
+                <SelectItem key={option.queueId} value={String(option.queueId)}>
+                  {option.label} ({option.games})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select
             value={playerFilter}
             onValueChange={(value) => setPlayerFilter(value ?? "all")}
@@ -163,6 +210,7 @@ export function MatchesTab({
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead className="w-[150px]">Played</TableHead>
+              <TableHead className="w-[130px]">Mode</TableHead>
               <TableHead className="w-[90px]">Result</TableHead>
               <TableHead className="w-[80px]">Length</TableHead>
               <TableHead>Your group</TableHead>
@@ -189,6 +237,9 @@ export function MatchesTab({
                 <TableRow key={match.matchId}>
                   <TableCell className="text-muted-foreground whitespace-nowrap">
                     {formatDateTime(match.gameStartTimestamp)}
+                  </TableCell>
+                  <TableCell>
+                    <QueueBadge queueId={match.queueId} />
                   </TableCell>
                   <TableCell>
                     <ResultPill win={match.groupWin} />
@@ -270,13 +321,13 @@ function MatchDialog({
               <DialogTitle className="flex flex-wrap items-center gap-2">
                 <span>{match.matchId}</span>
                 <ResultPill win={match.groupWin} />
+                <QueueBadge queueId={match.queueId} />
                 <Badge variant="secondary">queueId {match.queueId}</Badge>
-                <Badge variant="secondary">{match.gameMode}</Badge>
               </DialogTitle>
               <DialogDescription>
                 {formatDateTime(match.gameStartTimestamp)} ·{" "}
-                {formatDuration(match.gameDuration)} · patch {match.patch} ·{" "}
-                {match.trackedPuuids.length} friends in the lobby
+                {formatDuration(match.gameDuration)} · patch {match.patch} · gameMode{" "}
+                {match.gameMode} · {match.trackedPuuids.length} friends in the lobby
               </DialogDescription>
             </DialogHeader>
 

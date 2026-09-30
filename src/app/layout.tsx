@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "ARAM Group Tracker",
   description:
-    "Tracks every ARAM game your group plays through Riot's Match-V5 API and exports the full stat line to Excel.",
+    "Tracks every ARAM: Mayhem and ARAM game your group plays through Riot's Match-V5 API and exports the full stat line to Excel.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

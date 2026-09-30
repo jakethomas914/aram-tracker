@@ -4,12 +4,13 @@ import { MissingApiKeyError, RiotClient } from "@/lib/riot/client";
 import { createNameResolver, loadRuneTrees } from "@/lib/riot/ddragon";
 import { readDb, updateDb } from "@/lib/store/db";
 import {
-  ARAM_QUEUE_ID,
+  DEFAULT_TRACKED_QUEUE_IDS,
   type MatchRecord,
   type RawMatch,
   type RawTimeline,
   type RosterMember,
   type SyncSummary,
+  queueLabel,
 } from "@/lib/types";
 
 import {
@@ -20,7 +21,7 @@ import {
 } from "./demo";
 import { normalizeMatch } from "./normalize";
 
-/** Riot rejects startTime values before ARAM match history begins. */
+/** Riot rejects startTime values before match history begins. */
 const MATCH_HISTORY_EPOCH_SECONDS = 1_623_628_800;
 
 /** How many demo games exist in the simulated back catalogue. */
@@ -103,7 +104,8 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
     newMatchesFetched: 0,
     groupMatchesAdded: 0,
     skippedNonGroup: 0,
-    skippedNonAram: 0,
+    skippedWrongQueue: 0,
+    addedByQueue: {},
     pendingMatches: 0,
     addedMatchIds: [],
     errors: [],
@@ -114,6 +116,12 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
     const db = await readDb();
     const settings = db.settings;
     let roster = db.roster;
+
+    const trackedQueueIds =
+      settings.trackedQueueIds?.length > 0
+        ? settings.trackedQueueIds
+        : [...DEFAULT_TRACKED_QUEUE_IDS];
+    const trackedQueues = new Set(trackedQueueIds);
 
     // In demo mode an empty roster is seeded with the sample friend group so the
     // app has something to show on first run.
@@ -142,6 +150,7 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
         roster,
         count: DEMO_HISTORY_SIZE,
         runeTrees,
+        queueIds: trackedQueueIds,
       });
 
       // A simulated game ends a minute ago, so it lands at the top of the list
@@ -153,6 +162,7 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
             index: nextDemoMatchIndex([...known]),
             endedAt: Date.now() - 60_000,
             runeTrees,
+            queueIds: trackedQueueIds,
           }),
         );
       }
@@ -177,20 +187,24 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
         Math.floor((Date.now() - settings.lookbackDays * 86_400_000) / 1000),
       );
 
+      // match-v5 takes a single `queue` per call, so each roster member is asked
+      // once per tracked queue and the results are merged.
       const candidateIds = new Set<string>();
       for (const member of roster) {
         if (!member.resolved || !member.puuid) continue;
-        try {
-          const ids = await client.getMatchIds(member.puuid, {
-            queue: ARAM_QUEUE_ID,
-            count: settings.matchesPerPlayer,
-            startTime,
-          });
-          ids.forEach((id) => candidateIds.add(id));
-        } catch (error) {
-          summary.errors.push(
-            `Match history for ${member.gameName}#${member.tagLine}: ${errorMessage(error)}`,
-          );
+        for (const queueId of trackedQueueIds) {
+          try {
+            const ids = await client.getMatchIds(member.puuid, {
+              queue: queueId,
+              count: settings.matchesPerPlayer,
+              startTime,
+            });
+            ids.forEach((id) => candidateIds.add(id));
+          } catch (error) {
+            summary.errors.push(
+              `${queueLabel(queueId)} history for ${member.gameName}#${member.tagLine}: ${errorMessage(error)}`,
+            );
+          }
         }
       }
       summary.candidateMatches = candidateIds.size;
@@ -206,7 +220,7 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
         try {
           const match = await client.getMatch(matchId);
           let timeline: RawTimeline | null = null;
-          if (settings.fetchTimelines && match.info.queueId === ARAM_QUEUE_ID) {
+          if (settings.fetchTimelines && trackedQueues.has(match.info.queueId)) {
             try {
               timeline = await client.getTimeline(matchId);
             } catch (error) {
@@ -227,10 +241,10 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
     const rejected: string[] = [];
 
     for (const { match, timeline } of fetched) {
-      // The queue filter is applied server-side too, but ARAM is defined by
-      // queueId 450 so we verify it on the match itself before storing.
-      if (match.info.queueId !== ARAM_QUEUE_ID) {
-        summary.skippedNonAram += 1;
+      // The queue filter is applied server-side too, but the mode is defined by
+      // queueId, so we verify it on the match itself before storing.
+      if (!trackedQueues.has(match.info.queueId)) {
+        summary.skippedWrongQueue += 1;
         rejected.push(match.metadata.matchId);
         continue;
       }
@@ -260,6 +274,10 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
 
     summary.groupMatchesAdded = accepted.length;
     summary.addedMatchIds = accepted.map((record) => record.matchId);
+    for (const record of accepted) {
+      const key = String(record.queueId);
+      summary.addedByQueue[key] = (summary.addedByQueue[key] ?? 0) + 1;
+    }
 
     if (accepted.length > 0 && settings.autoWriteWorkbook) {
       try {

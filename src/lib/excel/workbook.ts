@@ -9,10 +9,12 @@ import {
   buildDuoSummaries,
   buildGroupOverview,
   buildPlayerSummaries,
+  buildQueueSummaries,
   buildRecords,
+  type PlayerSummary,
 } from "@/lib/stats/aggregate";
 import type { MatchRecord, ParticipantRecord, RosterMember } from "@/lib/types";
-import { ARAM_QUEUE_ID } from "@/lib/types";
+import { queueLabel } from "@/lib/types";
 
 const HEADER_FILL: ExcelJS.Fill = {
   type: "pattern",
@@ -116,28 +118,36 @@ function buildOverviewSheet(
   workbook: ExcelJS.Workbook,
   matches: MatchRecord[],
   roster: RosterMember[],
+  trackedQueueIds: number[],
 ): void {
   const overview = buildGroupOverview(matches);
+  const queues = buildQueueSummaries(matches);
   const sheet = workbook.addWorksheet("Overview");
   sheet.columns = [
     { width: 34 },
     { width: 26 },
     { width: 18 },
     { width: 18 },
+    { width: 18 },
+    { width: 18 },
   ];
+  const lastColumn = 6;
 
-  const title = sheet.addRow(["ARAM Group Tracker"]);
+  const title = sheet.addRow(["ARAM & ARAM: Mayhem Group Tracker"]);
   title.font = { bold: true, size: 16 };
   title.height = 24;
-  sheet.mergeCells(title.number, 1, title.number, 4);
+  sheet.mergeCells(title.number, 1, title.number, lastColumn);
   sheet.getCell(title.number, 1).fill = TITLE_FILL;
   sheet.getCell(title.number, 1).alignment = { vertical: "middle", horizontal: "center" };
 
+  const trackedLabel = trackedQueueIds
+    .map((queueId) => `${queueLabel(queueId)} (${queueId})`)
+    .join(" · ");
   const subtitle = sheet.addRow([
-    `Generated ${new Date().toLocaleString("en-US")} · queueId ${ARAM_QUEUE_ID} (ARAM) only`,
+    `Generated ${new Date().toLocaleString("en-US")} · tracked queues: ${trackedLabel || "none"}`,
   ]);
   subtitle.font = { italic: true, color: { argb: "FF64748B" } };
-  sheet.mergeCells(subtitle.number, 1, subtitle.number, 4);
+  sheet.mergeCells(subtitle.number, 1, subtitle.number, lastColumn);
   sheet.addRow([]);
 
   const section = (label: string) => {
@@ -148,7 +158,7 @@ function buildOverviewSheet(
       pattern: "solid",
       fgColor: { argb: "FFE2E8F0" },
     };
-    sheet.mergeCells(row.number, 1, row.number, 4);
+    sheet.mergeCells(row.number, 1, row.number, lastColumn);
   };
 
   const stat = (label: string, value: string | number, numFmt?: string) => {
@@ -171,6 +181,36 @@ function buildOverviewSheet(
   );
   stat("Longest win streak", overview.longestWinStreak, FMT_INT);
   stat("Longest loss streak", overview.longestLossStreak, FMT_INT);
+  sheet.addRow([]);
+
+  section("Record by queue");
+  const queueHeader = sheet.addRow([
+    "Queue",
+    "Queue ID",
+    "Games",
+    "Wins",
+    "Losses",
+    "Win rate",
+  ]);
+  queueHeader.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  queueHeader.fill = HEADER_FILL;
+  if (queues.length === 0) {
+    sheet.addRow(["No games tracked yet", "", 0, 0, 0, 0]);
+  }
+  for (const queue of queues) {
+    const row = sheet.addRow([
+      queue.label,
+      queue.queueId,
+      queue.games,
+      queue.wins,
+      queue.losses,
+      queue.winRate,
+    ]);
+    row.getCell(1).font = { bold: true };
+    row.getCell(2).numFmt = FMT_INT;
+    for (const index of [3, 4, 5]) row.getCell(index).numFmt = FMT_INT;
+    row.getCell(6).numFmt = FMT_PCT;
+  }
   sheet.addRow([]);
 
   section("Totals");
@@ -216,6 +256,7 @@ function buildMatchesSheet(workbook: ExcelJS.Workbook, matches: MatchRecord[]): 
   const columns: Array<ColumnSpec<MatchRecord>> = [
     { header: "Match ID", width: 20, value: (m) => m.matchId },
     { header: "Played at", width: 20, numFmt: FMT_DATE, value: (m) => toDate(m.gameStartTimestamp) },
+    { header: "Queue", width: 16, value: (m) => queueLabel(m.queueId) },
     { header: "Result", width: 9, value: (m) => resultLabel(m.groupWin) },
     { header: "Duration", width: 10, value: (m) => durationLabel(m.gameDuration) },
     { header: "Minutes", width: 9, numFmt: FMT_DEC, value: (m) => m.gameDuration / 60 },
@@ -274,7 +315,7 @@ function buildMatchesSheet(workbook: ExcelJS.Workbook, matches: MatchRecord[]): 
     { header: "Data source", width: 12, value: (m) => m.source },
   ];
 
-  const sheet = addSheet(workbook, "Matches", columns, matches, { freezeColumns: 2 });
+  const sheet = addSheet(workbook, "Matches", columns, matches, { freezeColumns: 3 });
   paintResultColumn(sheet, "Result");
 }
 
@@ -304,6 +345,7 @@ interface PerformanceRow {
 function performanceColumns(): Array<ColumnSpec<PerformanceRow>> {
   return [
     { header: "Played at", width: 20, numFmt: FMT_DATE, value: ({ match }) => toDate(match.gameStartTimestamp) },
+    { header: "Queue", width: 16, value: ({ match }) => queueLabel(match.queueId) },
     { header: "Player", width: 16, value: ({ participant }) => participant.alias ?? participant.riotId },
     { header: "Riot ID", width: 22, value: ({ participant }) => participant.riotId },
     { header: "Champion", width: 15, value: ({ participant }) => participant.championName },
@@ -372,16 +414,12 @@ function buildPerformanceSheet(
     }
   }
 
-  const sheet = addSheet(workbook, name, performanceColumns(), rows, { freezeColumns: 4 });
+  const sheet = addSheet(workbook, name, performanceColumns(), rows, { freezeColumns: 5 });
   paintResultColumn(sheet, "Result");
 }
 
-function buildPlayerTotalsSheet(workbook: ExcelJS.Workbook, matches: MatchRecord[]): void {
-  const summaries = buildPlayerSummaries(matches);
-  addSheet(
-    workbook,
-    "Player Totals",
-    [
+function playerTotalsColumns<T extends PlayerSummary>(): Array<ColumnSpec<T>> {
+  return [
       { header: "Player", width: 16, value: (s) => s.alias },
       { header: "Riot ID", width: 22, value: (s) => s.riotId },
       { header: "Games", width: 8, numFmt: FMT_INT, value: (s) => s.games },
@@ -413,8 +451,82 @@ function buildPlayerTotalsSheet(workbook: ExcelJS.Workbook, matches: MatchRecord
       { header: "Most played", width: 16, value: (s) => `${s.favoriteChampion} (${s.favoriteChampionGames})` },
       { header: "Minutes played", width: 14, numFmt: FMT_INT, value: (s) => s.minutesPlayed },
       { header: "Longest win streak", width: 16, numFmt: FMT_INT, value: (s) => s.longestWinStreak },
+  ];
+}
+
+function buildPlayerTotalsSheet(workbook: ExcelJS.Workbook, matches: MatchRecord[]): void {
+  addSheet(
+    workbook,
+    "Player Totals",
+    playerTotalsColumns<PlayerSummary>(),
+    buildPlayerSummaries(matches),
+    { freezeColumns: 1 },
+  );
+}
+
+/**
+ * The same per-player totals recomputed inside each queue, so Mayhem form can be
+ * read without standard ARAM games averaged into it.
+ */
+function buildPlayerTotalsByQueueSheet(
+  workbook: ExcelJS.Workbook,
+  matches: MatchRecord[],
+): void {
+  type Row = PlayerSummary & { queue: string; queueId: number };
+  const rows: Row[] = [];
+
+  for (const queue of buildQueueSummaries(matches)) {
+    const scoped = matches.filter((match) => match.queueId === queue.queueId);
+    for (const summary of buildPlayerSummaries(scoped)) {
+      rows.push({ ...summary, queue: queue.label, queueId: queue.queueId });
+    }
+  }
+
+  addSheet(
+    workbook,
+    "Player Totals by Queue",
+    [
+      { header: "Queue", width: 16, value: (r: Row) => r.queue },
+      { header: "Queue ID", width: 10, numFmt: FMT_INT, value: (r: Row) => r.queueId },
+      ...playerTotalsColumns<Row>(),
     ],
-    summaries,
+    rows,
+    { freezeColumns: 3 },
+  );
+}
+
+/** Group record per queue, mirroring the Overview section as a filterable sheet. */
+function buildQueueSheet(workbook: ExcelJS.Workbook, matches: MatchRecord[]): void {
+  addSheet(
+    workbook,
+    "Queue Breakdown",
+    [
+      { header: "Queue", width: 22, value: (q) => q.label },
+      { header: "Queue ID", width: 10, numFmt: FMT_INT, value: (q) => q.queueId },
+      { header: "Games", width: 9, numFmt: FMT_INT, value: (q) => q.games },
+      { header: "Wins", width: 9, numFmt: FMT_INT, value: (q) => q.wins },
+      { header: "Losses", width: 9, numFmt: FMT_INT, value: (q) => q.losses },
+      { header: "Win rate", width: 10, numFmt: FMT_PCT, value: (q) => q.winRate },
+      { header: "Share of games", width: 14, numFmt: FMT_PCT, value: (q) => q.shareOfGames },
+      { header: "Split lobbies", width: 13, numFmt: FMT_INT, value: (q) => q.splitGames },
+      { header: "Avg game length", width: 15, value: (q) => durationLabel(q.avgDurationSeconds) },
+      { header: "Minutes played", width: 14, numFmt: FMT_INT, value: (q) => q.totalMinutes },
+      { header: "Unique champions", width: 16, numFmt: FMT_INT, value: (q) => q.uniqueChampions },
+      { header: "Pentakills", width: 11, numFmt: FMT_INT, value: (q) => q.pentaKills },
+      {
+        header: "First game",
+        width: 20,
+        numFmt: FMT_DATE,
+        value: (q) => (q.firstMatchAt ? toDate(q.firstMatchAt) : null),
+      },
+      {
+        header: "Most recent game",
+        width: 20,
+        numFmt: FMT_DATE,
+        value: (q) => (q.lastMatchAt ? toDate(q.lastMatchAt) : null),
+      },
+    ],
+    buildQueueSummaries(matches),
     { freezeColumns: 1 },
   );
 }
@@ -483,10 +595,12 @@ export async function buildWorkbook(): Promise<ExcelJS.Workbook> {
   workbook.creator = "ARAM Group Tracker";
   workbook.created = new Date();
 
-  buildOverviewSheet(workbook, matches, db.roster);
+  buildOverviewSheet(workbook, matches, db.roster, db.settings.trackedQueueIds ?? []);
+  buildQueueSheet(workbook, matches);
   buildMatchesSheet(workbook, matches);
   buildPerformanceSheet(workbook, "Friend Performances", matches, (p) => p.isTracked);
   buildPlayerTotalsSheet(workbook, matches);
+  buildPlayerTotalsByQueueSheet(workbook, matches);
   buildChampionSheet(workbook, matches);
   buildDuoSheet(workbook, matches);
   buildRecordsSheet(workbook, matches);

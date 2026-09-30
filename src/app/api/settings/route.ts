@@ -3,12 +3,24 @@ import { z } from "zod";
 
 import { getDashboardState } from "@/lib/dashboard";
 import { saveSettings } from "@/lib/store/db";
+import { ARAM_QUEUES } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const knownQueueIds = new Set(ARAM_QUEUES.map((queue) => queue.id));
+
 const settingsSchema = z.object({
   region: z.enum(["americas", "europe", "asia", "sea"]).optional(),
+  trackedQueueIds: z
+    .array(
+      z
+        .number()
+        .int()
+        .refine((id) => knownQueueIds.has(id), "Unsupported queue ID."),
+    )
+    .min(1, "Track at least one queue.")
+    .optional(),
   minGroupSize: z.number().int().min(1).max(5).optional(),
   lookbackDays: z.number().int().min(1).max(3650).optional(),
   matchesPerPlayer: z.number().int().min(1).max(100).optional(),

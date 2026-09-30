@@ -1,6 +1,6 @@
 import type { RuneTree } from "@/lib/riot/ddragon";
 import type { RawMatch, RawParticipant, RawTimeline, RosterMember } from "@/lib/types";
-import { ARAM_QUEUE_ID } from "@/lib/types";
+import { DEFAULT_TRACKED_QUEUE_IDS } from "@/lib/types";
 
 /**
  * Without a RIOT_API_KEY the app runs on generated matches instead of an empty
@@ -297,6 +297,20 @@ export interface DemoMatchOptions {
   groupSize?: number;
   /** Live rune trees from Data Dragon; falls back to a bundled snapshot. */
   runeTrees?: RuneTree[] | null;
+  /** Queues to draw from, weighted towards the first entry. */
+  queueIds?: number[];
+}
+
+/**
+ * Two of every three demo games are the first tracked queue (ARAM: Mayhem by
+ * default), matching a group that plays Mayhem while it is in rotation and falls
+ * back to standard ARAM.
+ */
+function pickDemoQueueId(random: () => number, queueIds: number[] | undefined): number {
+  const pool = queueIds?.length ? queueIds : DEFAULT_TRACKED_QUEUE_IDS;
+  if (pool.length === 1) return pool[0];
+  if (random() < 0.66) return pool[0];
+  return pool[1 + Math.floor(random() * (pool.length - 1))];
 }
 
 export function buildDemoMatch(options: DemoMatchOptions): {
@@ -373,7 +387,9 @@ export function buildDemoMatch(options: DemoMatchOptions): {
       participants: participants.map((participant) => participant.puuid),
     },
     info: {
-      queueId: ARAM_QUEUE_ID,
+      queueId: pickDemoQueueId(random, options.queueIds),
+      // Mayhem is ARAM with modifiers, so Riot may report the same gameMode for
+      // both. The mode is identified by queueId everywhere in the app.
       gameMode: "ARAM",
       gameVersion: "15.19.704.1234",
       gameCreation: startedAt - 90_000,
@@ -435,6 +451,7 @@ export function demoMatchHistory(options: {
   count: number;
   now?: number;
   runeTrees?: RuneTree[] | null;
+  queueIds?: number[];
 }): Array<{ match: RawMatch; timeline: RawTimeline }> {
   const now = options.now ?? Date.now();
   const history: Array<{ match: RawMatch; timeline: RawTimeline }> = [];
@@ -451,6 +468,7 @@ export function demoMatchHistory(options: {
         index,
         endedAt,
         runeTrees: options.runeTrees,
+        queueIds: options.queueIds,
       }),
     );
   }

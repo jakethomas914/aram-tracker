@@ -1,4 +1,4 @@
-import type { MatchRecord, ParticipantRecord } from "@/lib/types";
+import { ARAM_QUEUES, type MatchRecord, type ParticipantRecord, queueLabel } from "@/lib/types";
 
 export interface PlayerSummary {
   puuid: string;
@@ -86,6 +86,25 @@ export interface GroupOverview {
   pentaKills: number;
   uniqueChampions: number;
   patches: string[];
+}
+
+/** Per-queue split, so ARAM: Mayhem and standard ARAM can be read separately. */
+export interface QueueSummary {
+  queueId: number;
+  label: string;
+  games: number;
+  wins: number;
+  losses: number;
+  splitGames: number;
+  winRate: number;
+  avgDurationSeconds: number;
+  totalMinutes: number;
+  uniqueChampions: number;
+  pentaKills: number;
+  firstMatchAt: number | null;
+  lastMatchAt: number | null;
+  /** Share of all tracked group games, 0–1. */
+  shareOfGames: number;
 }
 
 /** Matches where the tracked friends were all on one team, oldest first. */
@@ -179,6 +198,59 @@ export function buildGroupOverview(matches: MatchRecord[]): GroupOverview {
     uniqueChampions: champions.size,
     patches: [...new Set(ordered.map((match) => match.patch))].sort(),
   };
+}
+
+/**
+ * Queues are ordered the way `ARAM_QUEUES` lists them (Mayhem first) rather than
+ * by volume, so the primary mode keeps a stable position as games accumulate.
+ */
+export function buildQueueSummaries(matches: MatchRecord[]): QueueSummary[] {
+  const buckets = new Map<number, MatchRecord[]>();
+  for (const match of matches) {
+    const bucket = buckets.get(match.queueId) ?? [];
+    bucket.push(match);
+    buckets.set(match.queueId, bucket);
+  }
+
+  const priority = (queueId: number) => {
+    const index = ARAM_QUEUES.findIndex((queue) => queue.id === queueId);
+    return index === -1 ? ARAM_QUEUES.length : index;
+  };
+
+  return [...buckets.entries()]
+    .map(([queueId, bucket]) => {
+      const ordered = chronological(bucket);
+      const decided = ordered.filter((match) => match.groupWin !== null);
+      const wins = decided.filter((match) => match.groupWin === true).length;
+      const totalSeconds = ordered.reduce((total, match) => total + match.gameDuration, 0);
+
+      const champions = new Set<string>();
+      let pentaKills = 0;
+      for (const match of ordered) {
+        for (const participant of trackedParticipants(match)) {
+          champions.add(participant.championName);
+          pentaKills += participant.pentaKills;
+        }
+      }
+
+      return {
+        queueId,
+        label: queueLabel(queueId),
+        games: ordered.length,
+        wins,
+        losses: decided.length - wins,
+        splitGames: ordered.length - decided.length,
+        winRate: round(safeDivide(wins, decided.length), 4),
+        avgDurationSeconds: Math.round(safeDivide(totalSeconds, ordered.length)),
+        totalMinutes: Math.round(totalSeconds / 60),
+        uniqueChampions: champions.size,
+        pentaKills,
+        firstMatchAt: ordered[0]?.gameStartTimestamp ?? null,
+        lastMatchAt: ordered[ordered.length - 1]?.gameStartTimestamp ?? null,
+        shareOfGames: round(safeDivide(ordered.length, matches.length), 4),
+      };
+    })
+    .sort((a, b) => priority(a.queueId) - priority(b.queueId) || b.games - a.games);
 }
 
 export function buildPlayerSummaries(matches: MatchRecord[]): PlayerSummary[] {

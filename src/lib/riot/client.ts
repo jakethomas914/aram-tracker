@@ -5,7 +5,6 @@ import type {
   RawTimeline,
   RegionalRoute,
 } from "@/lib/types";
-import { ARAM_QUEUE_ID } from "@/lib/types";
 
 import { RateLimiter } from "./limiter";
 
@@ -106,12 +105,13 @@ export class RiotClient {
   }
 
   /**
-   * match-v5 match IDs. We pass `queue=450` so Riot filters to ARAM for us, and
-   * still verify `info.queueId` on each match before storing it.
+   * match-v5 match IDs. `queue` accepts a single ID per call, so callers wanting
+   * several queues (ARAM: Mayhem plus ARAM) issue one call each. We still verify
+   * `info.queueId` on each match before storing it.
    */
   async getMatchIds(puuid: string, query: MatchIdQuery = {}): Promise<string[]> {
     const params = new URLSearchParams();
-    params.set("queue", String(query.queue ?? ARAM_QUEUE_ID));
+    if (query.queue !== undefined) params.set("queue", String(query.queue));
     params.set("start", String(query.start ?? 0));
     params.set("count", String(Math.min(100, query.count ?? 20)));
     if (query.startTime !== undefined) params.set("startTime", String(query.startTime));

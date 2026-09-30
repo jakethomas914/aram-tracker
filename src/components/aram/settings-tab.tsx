@@ -5,6 +5,7 @@ import { KeyRound, RotateCcw, Save, TerminalSquare } from "lucide-react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -58,6 +59,23 @@ export function SettingsTab({
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
+  /** Kept in `availableQueues` order so Mayhem stays first in the header badges. */
+  function toggleQueue(queueId: number, enabled: boolean) {
+    const next = enabled
+      ? state.availableQueues
+          .filter(
+            (queue) => queue.id === queueId || draft.trackedQueueIds.includes(queue.id),
+          )
+          .map((queue) => queue.id)
+      : draft.trackedQueueIds.filter((id) => id !== queueId);
+
+    if (next.length === 0) {
+      toast.error("Track at least one queue.");
+      return;
+    }
+    update("trackedQueueIds", next);
+  }
+
   async function save() {
     setSaving(true);
     try {
@@ -103,6 +121,43 @@ export function SettingsTab({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>Tracked queues</Label>
+              <p className="text-muted-foreground text-xs">
+                Every game is identified by <code>info.queueId</code>. Turning a queue
+                off hides its games from the dashboard and the spreadsheet without
+                deleting them, and turning it back on restores them.
+              </p>
+            </div>
+            <div className="space-y-2">
+              {state.availableQueues.map((queue) => (
+                <div
+                  key={queue.id}
+                  className="border-border/60 bg-muted/20 flex items-start justify-between gap-3 rounded-lg border p-3"
+                >
+                  <div className="min-w-0 space-y-0.5">
+                    <Label
+                      htmlFor={`queue-${queue.id}`}
+                      className="flex flex-wrap items-center gap-2"
+                    >
+                      {queue.label}
+                      <Badge variant="secondary">{queue.id}</Badge>
+                    </Label>
+                    <p className="text-muted-foreground text-xs">{queue.description}</p>
+                  </div>
+                  <Switch
+                    id={`queue-${queue.id}`}
+                    checked={draft.trackedQueueIds.includes(queue.id)}
+                    onCheckedChange={(checked) => toggleQueue(queue.id, checked)}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <Separator />
+
           <div className="space-y-2">
             <Label htmlFor="region">Regional routing</Label>
             <Select
@@ -139,7 +194,7 @@ export function SettingsTab({
                 }
               />
               <p className="text-muted-foreground text-xs">
-                Solo ARAMs are ignored below this threshold.
+                Solo games are ignored below this threshold.
               </p>
             </div>
             <div className="space-y-2">
@@ -268,9 +323,9 @@ export function SettingsTab({
             <AlertTitle>Live Riot API mode</AlertTitle>
             <AlertDescription>
               Requests are rate limited to 20/second and 100/2 minutes, matching a
-              development key. Match history is filtered with{" "}
-              <code>queue={state.aramQueueId}</code> and every match is re-checked
-              against <code>info.queueId</code> before it is stored.
+              development key. Match history is pulled once per tracked queue (
+              {draft.trackedQueueIds.map((id) => `queue=${id}`).join(", ")}) and every
+              match is re-checked against <code>info.queueId</code> before it is stored.
             </AlertDescription>
           </Alert>
         )}
@@ -282,8 +337,8 @@ export function SettingsTab({
               Automatic polling
             </CardTitle>
             <CardDescription>
-              The watcher checks for new ARAM games on an interval and rewrites the
-              spreadsheet whenever one shows up.
+              The watcher checks every tracked queue on an interval and rewrites the
+              spreadsheet whenever a new game shows up.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">

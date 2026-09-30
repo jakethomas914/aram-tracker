@@ -1,5 +1,6 @@
 /**
- * Polls Riot for new ARAM games and rewrites the spreadsheet whenever one lands.
+ * Polls Riot for new games in every tracked queue (ARAM: Mayhem and ARAM by
+ * default) and rewrites the spreadsheet whenever one lands.
  *
  * Run alongside the dev server:
  *   npm run watch
@@ -12,6 +13,7 @@ import { EXPORT_DIR, WORKBOOK_FILENAME, isDemoMode } from "@/lib/config";
 import { writeWorkbookToDisk } from "@/lib/excel/workbook";
 import { getSettings, invalidateCache, setSyncState } from "@/lib/store/db";
 import { SyncBusyError, runSync } from "@/lib/sync/engine";
+import { queueLabel } from "@/lib/types";
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -30,8 +32,11 @@ async function once(): Promise<boolean> {
     const summary = await runSync();
 
     if (summary.groupMatchesAdded > 0) {
+      const split = Object.entries(summary.addedByQueue)
+        .map(([queueId, count]) => `${count} ${queueLabel(Number(queueId))}`)
+        .join(", ");
       log(
-        `+${summary.groupMatchesAdded} ARAM game(s): ${summary.addedMatchIds.join(", ")}`,
+        `+${summary.groupMatchesAdded} game(s) [${split}]: ${summary.addedMatchIds.join(", ")}`,
       );
       if (summary.workbookPath) log(`workbook updated -> ${summary.workbookPath}`);
     } else {

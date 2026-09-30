@@ -75,27 +75,36 @@ const COLUMNS: Array<{
 
 export function PlayersTab({
   players,
+  playersByQueue,
   champions,
   ddragonVersion,
 }: {
   players: PlayerSummary[];
+  playersByQueue: Array<{ queueId: number; label: string; players: PlayerSummary[] }>;
   champions: ChampionSummary[];
   ddragonVersion: string | null;
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("games");
   const [championPlayer, setChampionPlayer] = useState("all");
+  const [modeFilter, setModeFilter] = useState("all");
 
   if (players.length === 0) {
     return (
       <EmptyState
         icon={<Users className="size-8" />}
         title="No player stats yet"
-        description="Player totals appear once at least one ARAM game with your group has been synced."
+        description="Player totals appear once at least one game with your group has been synced."
       />
     );
   }
 
-  const sorted = [...players].sort((a, b) => {
+  const scope =
+    modeFilter === "all"
+      ? players
+      : (playersByQueue.find((entry) => String(entry.queueId) === modeFilter)?.players ??
+        []);
+
+  const sorted = [...scope].sort((a, b) => {
     // Deaths are the one stat where lower is better.
     const direction = sortKey === "avgDeaths" ? 1 : -1;
     return (a[sortKey] - b[sortKey]) * direction;
@@ -109,12 +118,27 @@ export function PlayersTab({
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader>
-          <CardTitle>Player totals</CardTitle>
-          <CardDescription>
-            Click any column header to re-sort. These are the same figures as the
-            Player Totals sheet in the workbook.
-          </CardDescription>
+        <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <CardTitle>Player totals</CardTitle>
+            <CardDescription>
+              Click any column header to re-sort. Switch modes to read Mayhem form on
+              its own — the same split the Player Totals by Queue sheet holds.
+            </CardDescription>
+          </div>
+          <Select value={modeFilter} onValueChange={(value) => setModeFilter(value ?? "all")}>
+            <SelectTrigger className="w-full sm:w-[200px]">
+              <SelectValue placeholder="All modes" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All modes</SelectItem>
+              {playersByQueue.map((entry) => (
+                <SelectItem key={entry.queueId} value={String(entry.queueId)}>
+                  {entry.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </CardHeader>
         <CardContent>
           <div className="slim-scroll overflow-x-auto">

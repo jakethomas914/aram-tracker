@@ -42,14 +42,14 @@ import {
 } from "@/lib/format";
 
 export function OverviewTab({ state }: { state: DashboardState }) {
-  const { overview, players, duos, records, matches } = state;
+  const { overview, queues, players, duos, records, matches } = state;
 
   if (overview.matches === 0) {
     return (
       <EmptyState
         icon={<Swords className="size-8" />}
         title="Nothing tracked yet"
-        description="Add your friends to the roster, then hit Sync now. Every ARAM game (queueId 450) with enough of the group in the lobby lands here and in the spreadsheet."
+        description="Add your friends to the roster, then hit Sync now. Every ARAM: Mayhem (queueId 2400) and ARAM (queueId 450) game with enough of the group in the lobby lands here and in the spreadsheet."
       />
     );
   }
@@ -102,12 +102,62 @@ export function OverviewTab({ state }: { state: DashboardState }) {
         />
       </div>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Mode split</CardTitle>
+          <CardDescription>
+            Every game is bucketed by its <code>queueId</code>, so Mayhem form reads
+            separately from standard ARAM. Both also get their own spreadsheet rows.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {queues.map((queue) => (
+            <div
+              key={queue.queueId}
+              className="border-border/60 bg-muted/30 space-y-3 rounded-lg border p-4"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-sm font-medium">{queue.label}</span>
+                <Badge variant="secondary" className="shrink-0">
+                  {queue.queueId}
+                </Badge>
+              </div>
+              <p className="text-2xl font-semibold tabular-nums">
+                {queue.wins}W – {queue.losses}L
+              </p>
+              <Progress value={queue.winRate * 100} />
+              <div className="text-muted-foreground space-y-1 text-xs">
+                <p>
+                  <span
+                    className={queue.winRate >= 0.5 ? "text-win font-medium" : "text-loss font-medium"}
+                  >
+                    {formatPercent(queue.winRate)}
+                  </span>{" "}
+                  win rate · {queue.games} game{queue.games === 1 ? "" : "s"} ·{" "}
+                  {formatPercent(queue.shareOfGames, 0)} of history
+                </p>
+                <p>
+                  Avg {formatDuration(queue.avgDurationSeconds)} ·{" "}
+                  {queue.uniqueChampions} champions
+                  {queue.pentaKills > 0
+                    ? ` · ${queue.pentaKills} penta${queue.pentaKills === 1 ? "" : "s"}`
+                    : ""}
+                </p>
+                {queue.lastMatchAt ? (
+                  <p>Last played {formatDateTime(queue.lastMatchAt)}</p>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Friend leaderboard</CardTitle>
             <CardDescription>
-              Ranked by win rate across every tracked ARAM game.
+              Ranked by win rate across every tracked game, both modes combined.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -173,7 +223,7 @@ export function OverviewTab({ state }: { state: DashboardState }) {
         <Card>
           <CardHeader>
             <CardTitle>Last games</CardTitle>
-            <CardDescription>Newest ARAM results for the group.</CardDescription>
+            <CardDescription>Newest results for the group, any tracked mode.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {recent.map((match) => {

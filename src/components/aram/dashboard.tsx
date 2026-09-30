@@ -27,6 +27,7 @@ import {
 import type { DashboardState } from "@/lib/dashboard";
 import { formatRelative } from "@/lib/format";
 import type { SyncSummary } from "@/lib/types";
+import { queueLabel } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const STATE_REFRESH_MS = 20_000;
@@ -86,10 +87,13 @@ export function Dashboard({ initialState }: { initialState: DashboardState }) {
           summary.pendingMatches > 0
             ? ` ${summary.pendingMatches} more to go — sync again to continue.`
             : "";
+        const split = Object.entries(summary.addedByQueue ?? {})
+          .map(([queueId, count]) => `${count} ${queueLabel(Number(queueId))}`)
+          .join(", ");
         toast.success(
-          `Added ${summary.groupMatchesAdded} ARAM ${
+          `Added ${summary.groupMatchesAdded} ${
             summary.groupMatchesAdded === 1 ? "game" : "games"
-          }`,
+          }${split ? ` (${split})` : ""}`,
           {
             description:
               (summary.workbookPath
@@ -100,7 +104,7 @@ export function Dashboard({ initialState }: { initialState: DashboardState }) {
       } else if (summary.errors.length > 0) {
         toast.error(summary.errors[0]);
       } else {
-        toast.info("No new ARAM games since the last sync.", {
+        toast.info("No new games since the last sync.", {
           description: `Checked ${summary.candidateMatches} match ${
             summary.candidateMatches === 1 ? "ID" : "IDs"
           } from Riot.`,
@@ -150,12 +154,15 @@ export function Dashboard({ initialState }: { initialState: DashboardState }) {
         <header className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge
-                variant="outline"
-                className="border-primary/40 text-primary bg-primary/10"
-              >
-                queueId {state.aramQueueId} · ARAM
-              </Badge>
+              {state.settings.trackedQueueIds.map((queueId) => (
+                <Badge
+                  key={queueId}
+                  variant="outline"
+                  className="border-primary/40 text-primary bg-primary/10"
+                >
+                  {queueLabel(queueId)} · {queueId}
+                </Badge>
+              ))}
               {state.demoMode ? (
                 <Badge variant="secondary" className="gap-1">
                   <FlaskConical className="size-3" />
@@ -175,9 +182,9 @@ export function Dashboard({ initialState }: { initialState: DashboardState }) {
               ARAM Group Tracker
             </h1>
             <p className="text-muted-foreground max-w-2xl text-sm">
-              Pulls every ARAM game your group plays together through Riot&apos;s
-              Match-V5 API, keeps the full stat line for each player, and writes it all
-              into a multi-sheet Excel workbook.
+              Pulls every ARAM: Mayhem and standard ARAM game your group plays together
+              through Riot&apos;s Match-V5 API, keeps the full stat line for each player,
+              and writes it all into a multi-sheet Excel workbook.
             </p>
           </div>
 
@@ -264,6 +271,7 @@ export function Dashboard({ initialState }: { initialState: DashboardState }) {
           <TabsContent value="players">
             <PlayersTab
               players={state.players}
+              playersByQueue={state.playersByQueue}
               champions={state.champions}
               ddragonVersion={state.ddragonVersion}
             />
