@@ -53,11 +53,15 @@ async function resolveRoster(
   const unresolved = roster.filter((member) => !member.resolved || !member.puuid);
   if (unresolved.length === 0) return roster;
 
+  // Keyed by Riot ID rather than puuid, which may be blank on several entries.
+  const riotIdKey = (member: RosterMember) =>
+    `${member.gameName.toLowerCase()}#${member.tagLine.toLowerCase()}`;
+
   const resolved = new Map<string, RosterMember>();
   for (const member of unresolved) {
     try {
       const account = await client.getAccountByRiotId(member.gameName, member.tagLine);
-      resolved.set(member.puuid, {
+      resolved.set(riotIdKey(member), {
         ...member,
         puuid: account.puuid,
         gameName: account.gameName,
@@ -74,7 +78,7 @@ async function resolveRoster(
   if (resolved.size === 0) return roster;
 
   return updateDb((db) => {
-    db.roster = db.roster.map((member) => resolved.get(member.puuid) ?? member);
+    db.roster = db.roster.map((member) => resolved.get(riotIdKey(member)) ?? member);
     return db.roster;
   });
 }
