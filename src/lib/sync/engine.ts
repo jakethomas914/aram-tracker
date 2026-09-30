@@ -1,0 +1,268 @@
+import { EXPORT_DIR, WORKBOOK_FILENAME, isDemoMode } from "@/lib/config";
+import { writeWorkbookToDisk } from "@/lib/excel/workbook";
+import { MissingApiKeyError, RiotClient } from "@/lib/riot/client";
+import { createNameResolver } from "@/lib/riot/ddragon";
+import { readDb, updateDb } from "@/lib/store/db";
+import {
+  ARAM_QUEUE_ID,
+  type MatchRecord,
+  type RawMatch,
+  type RawTimeline,
+  type RosterMember,
+  type SyncSummary,
+} from "@/lib/types";
+
+import { demoMatchHistory, demoRosterMembers } from "./demo";
+import { normalizeMatch } from "./normalize";
+
+/** Riot rejects startTime values before ARAM match history begins. */
+const MATCH_HISTORY_EPOCH_SECONDS = 1_623_628_800;
+
+/** How many demo games exist in the simulated back catalogue. */
+const DEMO_HISTORY_SIZE = 26;
+
+export class SyncBusyError extends Error {
+  constructor() {
+    super("A sync is already running.");
+    this.name = "SyncBusyError";
+  }
+}
+
+export interface SyncOptions {
+  /** Ignore the running flag (used to recover from a crashed sync). */
+  force?: boolean;
+  /** Append one freshly finished demo game before syncing. */
+  simulateNewDemoMatch?: boolean;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Look up puuids for roster entries added by Riot ID but never resolved. */
+async function resolveRoster(
+  client: RiotClient,
+  roster: RosterMember[],
+  errors: string[],
+): Promise<RosterMember[]> {
+  const unresolved = roster.filter((member) => !member.resolved || !member.puuid);
+  if (unresolved.length === 0) return roster;
+
+  const resolved = new Map<string, RosterMember>();
+  for (const member of unresolved) {
+    try {
+      const account = await client.getAccountByRiotId(member.gameName, member.tagLine);
+      resolved.set(member.puuid, {
+        ...member,
+        puuid: account.puuid,
+        gameName: account.gameName,
+        tagLine: account.tagLine,
+        resolved: true,
+      });
+    } catch (error) {
+      errors.push(
+        `Could not resolve ${member.gameName}#${member.tagLine}: ${errorMessage(error)}`,
+      );
+    }
+  }
+
+  if (resolved.size === 0) return roster;
+
+  return updateDb((db) => {
+    db.roster = db.roster.map((member) => resolved.get(member.puuid) ?? member);
+    return db.roster;
+  });
+}
+
+export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
+  const startedAt = Date.now();
+  const existing = await readDb();
+
+  if (existing.syncState.running && !options.force) throw new SyncBusyError();
+
+  await updateDb((db) => {
+    db.syncState.running = true;
+    db.syncState.lastError = null;
+  });
+
+  const summary: SyncSummary = {
+    startedAt,
+    finishedAt: startedAt,
+    durationMs: 0,
+    source: isDemoMode() ? "demo" : "riot",
+    candidateMatches: 0,
+    newMatchesFetched: 0,
+    groupMatchesAdded: 0,
+    skippedNonGroup: 0,
+    skippedNonAram: 0,
+    addedMatchIds: [],
+    errors: [],
+    workbookPath: null,
+  };
+
+  try {
+    const db = await readDb();
+    const settings = db.settings;
+    let roster = db.roster;
+
+    // In demo mode an empty roster is seeded with the sample friend group so the
+    // app has something to show on first run.
+    if (roster.length === 0 && summary.source === "demo") {
+      roster = await updateDb((current) => {
+        current.roster = demoRosterMembers();
+        return current.roster;
+      });
+    }
+
+    if (roster.length === 0) {
+      summary.errors.push("Add at least one friend to the roster before syncing.");
+      return await finish(summary);
+    }
+
+    const known = new Set([...Object.keys(db.matches), ...db.skippedMatchIds]);
+    const names = await createNameResolver();
+
+    const fetched: Array<{ match: RawMatch; timeline: RawTimeline | null }> = [];
+
+    if (summary.source === "demo") {
+      const historySize =
+        DEMO_HISTORY_SIZE + (options.simulateNewDemoMatch ? countDemoExtras(known) + 1 : 0);
+      const history = demoMatchHistory({ roster, count: historySize });
+      summary.candidateMatches = history.length;
+
+      for (const entry of history) {
+        if (known.has(entry.match.metadata.matchId)) continue;
+        fetched.push({
+          match: entry.match,
+          timeline: settings.fetchTimelines ? entry.timeline : null,
+        });
+      }
+    } else {
+      const client = new RiotClient(settings.region);
+      roster = await resolveRoster(client, roster, summary.errors);
+
+      const startTime = Math.max(
+        MATCH_HISTORY_EPOCH_SECONDS,
+        Math.floor((Date.now() - settings.lookbackDays * 86_400_000) / 1000),
+      );
+
+      const candidateIds = new Set<string>();
+      for (const member of roster) {
+        if (!member.resolved || !member.puuid) continue;
+        try {
+          const ids = await client.getMatchIds(member.puuid, {
+            queue: ARAM_QUEUE_ID,
+            count: settings.matchesPerPlayer,
+            startTime,
+          });
+          ids.forEach((id) => candidateIds.add(id));
+        } catch (error) {
+          summary.errors.push(
+            `Match history for ${member.gameName}#${member.tagLine}: ${errorMessage(error)}`,
+          );
+        }
+      }
+      summary.candidateMatches = candidateIds.size;
+
+      for (const matchId of candidateIds) {
+        if (known.has(matchId)) continue;
+        try {
+          const match = await client.getMatch(matchId);
+          let timeline: RawTimeline | null = null;
+          if (settings.fetchTimelines && match.info.queueId === ARAM_QUEUE_ID) {
+            try {
+              timeline = await client.getTimeline(matchId);
+            } catch (error) {
+              // Ability order is a nice-to-have; never fail a match over it.
+              summary.errors.push(`Timeline for ${matchId}: ${errorMessage(error)}`);
+            }
+          }
+          fetched.push({ match, timeline });
+        } catch (error) {
+          summary.errors.push(`Match ${matchId}: ${errorMessage(error)}`);
+        }
+      }
+    }
+
+    summary.newMatchesFetched = fetched.length;
+
+    const accepted: MatchRecord[] = [];
+    const rejected: string[] = [];
+
+    for (const { match, timeline } of fetched) {
+      // The queue filter is applied server-side too, but ARAM is defined by
+      // queueId 450 so we verify it on the match itself before storing.
+      if (match.info.queueId !== ARAM_QUEUE_ID) {
+        summary.skippedNonAram += 1;
+        rejected.push(match.metadata.matchId);
+        continue;
+      }
+
+      const record = normalizeMatch(match, {
+        names,
+        roster,
+        timeline,
+        source: summary.source,
+      });
+
+      if (record.trackedPuuids.length < settings.minGroupSize) {
+        summary.skippedNonGroup += 1;
+        rejected.push(record.matchId);
+        continue;
+      }
+
+      accepted.push(record);
+    }
+
+    if (accepted.length > 0 || rejected.length > 0) {
+      await updateDb((current) => {
+        for (const record of accepted) current.matches[record.matchId] = record;
+        current.skippedMatchIds = [...new Set([...current.skippedMatchIds, ...rejected])];
+      });
+    }
+
+    summary.groupMatchesAdded = accepted.length;
+    summary.addedMatchIds = accepted.map((record) => record.matchId);
+
+    if (accepted.length > 0 && settings.autoWriteWorkbook) {
+      try {
+        summary.workbookPath = await writeWorkbookToDisk(EXPORT_DIR, WORKBOOK_FILENAME);
+      } catch (error) {
+        summary.errors.push(`Workbook export: ${errorMessage(error)}`);
+      }
+    }
+
+    return await finish(summary);
+  } catch (error) {
+    const message =
+      error instanceof MissingApiKeyError
+        ? error.message
+        : `Sync failed: ${errorMessage(error)}`;
+    summary.errors.push(message);
+    return await finish(summary, message);
+  }
+}
+
+function countDemoExtras(known: Set<string>): number {
+  let extras = 0;
+  for (const id of known) {
+    const index = Number.parseInt(id.replace(/^DEMO_NA1_/, ""), 10);
+    if (Number.isFinite(index) && index >= DEMO_HISTORY_SIZE) extras += 1;
+  }
+  return extras;
+}
+
+async function finish(summary: SyncSummary, error: string | null = null): Promise<SyncSummary> {
+  summary.finishedAt = Date.now();
+  summary.durationMs = summary.finishedAt - summary.startedAt;
+
+  await updateDb((db) => {
+    db.syncState.running = false;
+    db.syncState.lastSyncAt = summary.finishedAt;
+    db.syncState.lastSummary = summary;
+    db.syncState.lastError = error ?? summary.errors[0] ?? null;
+    if (!error && summary.errors.length === 0) db.syncState.lastSuccessAt = summary.finishedAt;
+  });
+
+  return summary;
+}
