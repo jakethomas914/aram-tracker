@@ -1,3 +1,9 @@
+import {
+  CHAMPION_CLASSES,
+  CHAMPION_CLASS_KEYS,
+  type ChampionClassKey,
+  getPrimaryChampionClass,
+} from "@/lib/riot/champion-data";
 import { ARAM_QUEUES, type MatchRecord, type ParticipantRecord, queueLabel } from "@/lib/types";
 
 export interface PlayerSummary {
@@ -251,6 +257,58 @@ export function buildQueueSummaries(matches: MatchRecord[]): QueueSummary[] {
       };
     })
     .sort((a, b) => priority(a.queueId) - priority(b.queueId) || b.games - a.games);
+}
+
+/** Share of tracked picks by champion class (ADC, tank, assassin, and so on). */
+export interface ChampionClassSummary {
+  classKey: ChampionClassKey;
+  label: string;
+  shortLabel: string;
+  picks: number;
+  /** 0–1 share of every tracked pick. */
+  share: number;
+  wins: number;
+  winRate: number;
+  avgDamage: number;
+}
+
+/**
+ * Each tracked pick counts once, under the champion's primary Data Dragon tag.
+ * Classes with no picks stay in the list so the set of roles stays stable.
+ */
+export function buildChampionClassSummaries(matches: MatchRecord[]): ChampionClassSummary[] {
+  const buckets = new Map<ChampionClassKey, { picks: number; wins: number; damage: number }>();
+  for (const key of CHAMPION_CLASS_KEYS) {
+    buckets.set(key, { picks: 0, wins: 0, damage: 0 });
+  }
+
+  let total = 0;
+  for (const match of matches) {
+    for (const participant of trackedParticipants(match)) {
+      const key = getPrimaryChampionClass(participant.championName || participant.championId);
+      const bucket = buckets.get(key);
+      if (!bucket) continue;
+      bucket.picks += 1;
+      if (participant.win) bucket.wins += 1;
+      bucket.damage += participant.totalDamageDealtToChampions;
+      total += 1;
+    }
+  }
+
+  return CHAMPION_CLASS_KEYS.map((key) => {
+    const bucket = buckets.get(key) ?? { picks: 0, wins: 0, damage: 0 };
+    const meta = CHAMPION_CLASSES[key];
+    return {
+      classKey: key,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      picks: bucket.picks,
+      share: round(safeDivide(bucket.picks, total), 4),
+      wins: bucket.wins,
+      winRate: round(safeDivide(bucket.wins, bucket.picks), 4),
+      avgDamage: Math.round(safeDivide(bucket.damage, bucket.picks)),
+    };
+  }).sort((a, b) => b.share - a.share || a.label.localeCompare(b.label));
 }
 
 export function buildPlayerSummaries(matches: MatchRecord[]): PlayerSummary[] {

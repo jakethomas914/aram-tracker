@@ -5,6 +5,7 @@ import ExcelJS from "exceljs";
 
 import { getMatches, readDb } from "@/lib/store/db";
 import {
+  buildChampionClassSummaries,
   buildChampionSummaries,
   buildDuoSummaries,
   buildGroupOverview,
@@ -553,6 +554,23 @@ function buildChampionSheet(workbook: ExcelJS.Workbook, matches: MatchRecord[]):
   );
 }
 
+function buildChampionClassSheet(workbook: ExcelJS.Workbook, matches: MatchRecord[]): void {
+  addSheet(
+    workbook,
+    "Champion Classes",
+    [
+      { header: "Class", width: 18, value: (c) => c.label },
+      { header: "Picks", width: 10, numFmt: FMT_INT, value: (c) => c.picks },
+      { header: "Share of picks", width: 14, numFmt: FMT_PCT, value: (c) => c.share },
+      { header: "Wins", width: 9, numFmt: FMT_INT, value: (c) => c.wins },
+      { header: "Win rate", width: 10, numFmt: FMT_PCT, value: (c) => c.winRate },
+      { header: "Avg damage", width: 14, numFmt: FMT_INT, value: (c) => c.avgDamage },
+    ],
+    buildChampionClassSummaries(matches),
+    { freezeColumns: 1 },
+  );
+}
+
 function buildDuoSheet(workbook: ExcelJS.Workbook, matches: MatchRecord[]): void {
   addSheet(
     workbook,
@@ -602,6 +620,7 @@ export async function buildWorkbook(): Promise<ExcelJS.Workbook> {
   buildPlayerTotalsSheet(workbook, matches);
   buildPlayerTotalsByQueueSheet(workbook, matches);
   buildChampionSheet(workbook, matches);
+  buildChampionClassSheet(workbook, matches);
   buildDuoSheet(workbook, matches);
   buildRecordsSheet(workbook, matches);
   // Everyone in the lobby, so nothing the API returned is thrown away.

@@ -84,7 +84,7 @@ export function PlayersTab({
   champions: ChampionSummary[];
   ddragonVersion: string | null;
 }) {
-  const [sortKey, setSortKey] = useState<SortKey>("games");
+  const [sortKey, setSortKey] = useState<SortKey>("avgDamage");
   const [championPlayer, setChampionPlayer] = useState("all");
   const [modeFilter, setModeFilter] = useState("all");
 
@@ -122,8 +122,8 @@ export function PlayersTab({
           <div className="space-y-1">
             <CardTitle>Player totals</CardTitle>
             <CardDescription>
-              Click any column header to re-sort. Switch modes to read Mayhem form on
-              its own — the same split the Player Totals by Queue sheet holds.
+              Sorted by average damage. Click any column header to re-sort, or switch
+              modes to read Mayhem form on its own.
             </CardDescription>
           </div>
           <Select value={modeFilter} onValueChange={(value) => setModeFilter(value ?? "all")}>
