@@ -5,8 +5,8 @@ import ExcelJS from "exceljs";
 
 import { getMatches, readDb } from "@/lib/store/db";
 import {
-  buildChampionClassSummaries,
   buildChampionSummaries,
+  buildPlayerChampionClassSummaries,
   buildDuoSummaries,
   buildGroupOverview,
   buildPlayerSummaries,
@@ -14,6 +14,7 @@ import {
   buildRecords,
   type PlayerSummary,
 } from "@/lib/stats/aggregate";
+import { CHAMPION_CLASSES, CHAMPION_CLASS_KEYS } from "@/lib/riot/champion-data";
 import type { MatchRecord, ParticipantRecord, RosterMember } from "@/lib/types";
 import { queueLabel } from "@/lib/types";
 
@@ -555,18 +556,39 @@ function buildChampionSheet(workbook: ExcelJS.Workbook, matches: MatchRecord[]):
 }
 
 function buildChampionClassSheet(workbook: ExcelJS.Workbook, matches: MatchRecord[]): void {
+  const rows = buildPlayerChampionClassSummaries(matches).map((player) => ({
+    ...player,
+    shareOf: (classKey: (typeof CHAMPION_CLASS_KEYS)[number]) =>
+      player.classes.find((entry) => entry.classKey === classKey)?.share ?? 0,
+    picksOf: (classKey: (typeof CHAMPION_CLASS_KEYS)[number]) =>
+      player.classes.find((entry) => entry.classKey === classKey)?.picks ?? 0,
+  }));
+
   addSheet(
     workbook,
     "Champion Classes",
     [
-      { header: "Class", width: 18, value: (c) => c.label },
-      { header: "Picks", width: 10, numFmt: FMT_INT, value: (c) => c.picks },
-      { header: "Share of picks", width: 14, numFmt: FMT_PCT, value: (c) => c.share },
-      { header: "Wins", width: 9, numFmt: FMT_INT, value: (c) => c.wins },
-      { header: "Win rate", width: 10, numFmt: FMT_PCT, value: (c) => c.winRate },
-      { header: "Avg damage", width: 14, numFmt: FMT_INT, value: (c) => c.avgDamage },
+      { header: "Player", width: 16, value: (row) => row.alias },
+      { header: "Games", width: 9, numFmt: FMT_INT, value: (row) => row.games },
+      ...CHAMPION_CLASS_KEYS.flatMap((classKey) => {
+        const label = CHAMPION_CLASSES[classKey].shortLabel;
+        return [
+          {
+            header: `${label} share`,
+            width: 14,
+            numFmt: FMT_PCT,
+            value: (row: (typeof rows)[number]) => row.shareOf(classKey),
+          },
+          {
+            header: `${label} picks`,
+            width: 12,
+            numFmt: FMT_INT,
+            value: (row: (typeof rows)[number]) => row.picksOf(classKey),
+          },
+        ];
+      }),
     ],
-    buildChampionClassSummaries(matches),
+    rows,
     { freezeColumns: 1 },
   );
 }

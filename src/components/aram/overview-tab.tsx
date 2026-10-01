@@ -15,10 +15,11 @@ import { Progress } from "@/components/ui/progress";
 import type { DashboardState } from "@/lib/dashboard";
 import { formatNumber, formatPercent } from "@/lib/format";
 import { CHAMPION_CLASSES } from "@/lib/riot/champion-data";
+import type { PlayerClassShare } from "@/lib/stats/aggregate";
 import { cn } from "@/lib/utils";
 
 export function OverviewTab({ state }: { state: DashboardState }) {
-  const { overview, players, championClasses } = state;
+  const { overview, players, playerChampionClasses } = state;
 
   if (overview.matches === 0) {
     return (
@@ -34,6 +35,9 @@ export function OverviewTab({ state }: { state: DashboardState }) {
     (a, b) => b.avgDamage - a.avgDamage || b.winRate - a.winRate || a.alias.localeCompare(b.alias),
   );
   const topDamage = ranked[0]?.avgDamage ?? 0;
+  const classesByPlayer = new Map(
+    playerChampionClasses.map((entry) => [entry.puuid, entry]),
+  );
 
   return (
     <div className="space-y-6">
@@ -110,32 +114,79 @@ export function OverviewTab({ state }: { state: DashboardState }) {
         <CardHeader>
           <CardTitle>Champion classes</CardTitle>
           <CardDescription>
-            Share of every champion the tracked group locked in. Each pick counts once,
-            under that champion&apos;s primary role.
+            Each player&apos;s own mix. A percentage is that person&apos;s share of their
+            tracked games on that class, counted once under the champion&apos;s primary
+            role.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          {championClasses.map((entry) => {
-            const meta = CHAMPION_CLASSES[entry.classKey];
+        <CardContent className="space-y-6">
+          {ranked.map((player) => {
+            const mix = classesByPlayer.get(player.puuid);
+            if (!mix) return null;
             return (
-              <div key={entry.classKey} className="space-y-2">
+              <div key={player.puuid} className="space-y-2">
                 <div className="flex items-baseline justify-between gap-3 text-sm">
-                  <span className="font-medium">{meta.shortLabel}</span>
-                  <span className="text-muted-foreground tabular-nums">
-                    <span className="text-foreground font-medium">
-                      {formatPercent(entry.share, 0)}
-                    </span>
-                    {" · "}
-                    {entry.picks} pick{entry.picks === 1 ? "" : "s"}
-                    {entry.picks > 0 ? ` · ${formatPercent(entry.winRate)} WR` : ""}
+                  <span className="truncate font-medium">{player.alias}</span>
+                  <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                    {mix.games} game{mix.games === 1 ? "" : "s"}
                   </span>
                 </div>
-                <Progress value={entry.share * 100} />
+                <ClassMix classes={mix.classes} />
               </div>
             );
           })}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function ClassMix({ classes }: { classes: PlayerClassShare[] }) {
+  const played = classes.filter((entry) => entry.share > 0);
+  const games = classes.reduce((total, entry) => total + entry.picks, 0);
+  const summary = classes
+    .map((entry) => `${entry.shortLabel} ${formatPercent(entry.share, 0)}`)
+    .join(", ");
+
+  return (
+    <div className="space-y-2">
+      <div
+        className="bg-muted flex h-2.5 w-full overflow-hidden rounded-full"
+        role="img"
+        aria-label={summary}
+      >
+        {played.map((entry) => (
+          <div
+            key={entry.classKey}
+            className="h-full"
+            style={{
+              width: `${entry.share * 100}%`,
+              backgroundColor: CHAMPION_CLASSES[entry.classKey].color,
+            }}
+          />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {classes.map((entry) => (
+          <span
+            key={entry.classKey}
+            className={cn(
+              "text-xs tabular-nums",
+              entry.picks === 0 && "text-muted-foreground/70",
+            )}
+            title={`${entry.label}: ${entry.picks} of ${games} games`}
+          >
+            <span
+              className="mr-1 inline-block size-2 rounded-full align-middle"
+              style={{ backgroundColor: CHAMPION_CLASSES[entry.classKey].color }}
+            />
+            <span className={entry.picks > 0 ? "font-medium" : undefined}>
+              {entry.shortLabel}
+            </span>{" "}
+            {formatPercent(entry.share, 0)}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

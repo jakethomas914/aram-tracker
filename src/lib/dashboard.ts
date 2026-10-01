@@ -2,15 +2,15 @@ import { EXPORT_DIR, WORKBOOK_FILENAME, isDemoMode } from "@/lib/config";
 import { loadStaticData } from "@/lib/riot/ddragon";
 import { getMatches, readDb } from "@/lib/store/db";
 import {
-  buildChampionClassSummaries,
   buildChampionSummaries,
+  buildPlayerChampionClassSummaries,
   buildDuoSummaries,
   buildGroupOverview,
   buildPlayerSummaries,
   buildQueueSummaries,
   buildRecords,
-  type ChampionClassSummary,
   type ChampionSummary,
+  type PlayerChampionClassSummary,
   type DuoSummary,
   type GroupOverview,
   type PlayerSummary,
@@ -39,7 +39,7 @@ export interface DashboardState {
   /** The same player totals recomputed inside each queue, for the mode filter. */
   playersByQueue: Array<{ queueId: number; label: string; players: PlayerSummary[] }>;
   champions: ChampionSummary[];
-  championClasses: ChampionClassSummary[];
+  playerChampionClasses: PlayerChampionClassSummary[];
   duos: DuoSummary[];
   records: RecordEntry[];
   matches: MatchRecord[];
@@ -74,7 +74,7 @@ export async function getDashboardState(): Promise<DashboardState> {
       ),
     })),
     champions: buildChampionSummaries(matches),
-    championClasses: buildChampionClassSummaries(matches),
+    playerChampionClasses: buildPlayerChampionClassSummaries(matches),
     duos: buildDuoSummaries(matches),
     records: buildRecords(matches),
     matches: matches.slice(0, MATCH_PAGE_SIZE),

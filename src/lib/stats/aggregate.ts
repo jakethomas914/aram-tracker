@@ -259,56 +259,71 @@ export function buildQueueSummaries(matches: MatchRecord[]): QueueSummary[] {
     .sort((a, b) => priority(a.queueId) - priority(b.queueId) || b.games - a.games);
 }
 
-/** Share of tracked picks by champion class (ADC, tank, assassin, and so on). */
-export interface ChampionClassSummary {
+/** One class's share of a single player's tracked games. */
+export interface PlayerClassShare {
   classKey: ChampionClassKey;
   label: string;
   shortLabel: string;
   picks: number;
-  /** 0–1 share of every tracked pick. */
+  /** 0–1 share of this player's own picks, not the group's. */
   share: number;
-  wins: number;
-  winRate: number;
-  avgDamage: number;
+}
+
+/** Champion-class mix for one tracked player. */
+export interface PlayerChampionClassSummary {
+  puuid: string;
+  alias: string;
+  games: number;
+  /** Stable class order (ADC, tank, assassin, mage, fighter, support). */
+  classes: PlayerClassShare[];
 }
 
 /**
  * Each tracked pick counts once, under the champion's primary Data Dragon tag.
- * Classes with no picks stay in the list so the set of roles stays stable.
+ * Shares are computed inside each player, so a tank one-trick and an ADC one-trick
+ * both read as 100% of their own games rather than being averaged together.
  */
-export function buildChampionClassSummaries(matches: MatchRecord[]): ChampionClassSummary[] {
-  const buckets = new Map<ChampionClassKey, { picks: number; wins: number; damage: number }>();
-  for (const key of CHAMPION_CLASS_KEYS) {
-    buckets.set(key, { picks: 0, wins: 0, damage: 0 });
-  }
+export function buildPlayerChampionClassSummaries(
+  matches: MatchRecord[],
+): PlayerChampionClassSummary[] {
+  const byPlayer = new Map<string, { alias: string; games: number; counts: Map<ChampionClassKey, number> }>();
 
-  let total = 0;
   for (const match of matches) {
     for (const participant of trackedParticipants(match)) {
-      const key = getPrimaryChampionClass(participant.championName || participant.championId);
-      const bucket = buckets.get(key);
-      if (!bucket) continue;
-      bucket.picks += 1;
-      if (participant.win) bucket.wins += 1;
-      bucket.damage += participant.totalDamageDealtToChampions;
-      total += 1;
+      const classKey = getPrimaryChampionClass(
+        participant.championName || participant.championId,
+      );
+      const existing = byPlayer.get(participant.puuid);
+      const entry = existing ?? {
+        alias: participant.alias ?? participant.riotId,
+        games: 0,
+        counts: new Map(CHAMPION_CLASS_KEYS.map((key) => [key, 0])),
+      };
+      entry.alias = participant.alias ?? participant.riotId;
+      entry.games += 1;
+      entry.counts.set(classKey, (entry.counts.get(classKey) ?? 0) + 1);
+      byPlayer.set(participant.puuid, entry);
     }
   }
 
-  return CHAMPION_CLASS_KEYS.map((key) => {
-    const bucket = buckets.get(key) ?? { picks: 0, wins: 0, damage: 0 };
-    const meta = CHAMPION_CLASSES[key];
-    return {
-      classKey: key,
-      label: meta.label,
-      shortLabel: meta.shortLabel,
-      picks: bucket.picks,
-      share: round(safeDivide(bucket.picks, total), 4),
-      wins: bucket.wins,
-      winRate: round(safeDivide(bucket.wins, bucket.picks), 4),
-      avgDamage: Math.round(safeDivide(bucket.damage, bucket.picks)),
-    };
-  }).sort((a, b) => b.share - a.share || a.label.localeCompare(b.label));
+  return [...byPlayer.entries()]
+    .map(([puuid, entry]) => ({
+      puuid,
+      alias: entry.alias,
+      games: entry.games,
+      classes: CHAMPION_CLASS_KEYS.map((classKey) => {
+        const picks = entry.counts.get(classKey) ?? 0;
+        const meta = CHAMPION_CLASSES[classKey];
+        return {
+          classKey,
+          label: meta.label,
+          shortLabel: meta.shortLabel,
+          picks,
+          share: round(safeDivide(picks, entry.games), 4),
+        };
+      }),
+    }))
+    .sort((a, b) => a.alias.localeCompare(b.alias));
 }
 
 export function buildPlayerSummaries(matches: MatchRecord[]): PlayerSummary[] {
