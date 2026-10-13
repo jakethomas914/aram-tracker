@@ -11,7 +11,10 @@
     "typecheck": "tsc --noEmit",
     "watch": "tsx scripts/watch.ts",
     "sync": "tsx scripts/sync-once.ts",
-    "export": "tsx scripts/export-once.ts"
+    "export": "tsx scripts/export-once.ts",
+    "desktop": "electron .",
+    "desktop:prepare": "node scripts/prepare-desktop.mjs",
+    "desktop:build": "npm run build && npm run desktop:prepare && electron-builder --win portable --publish never"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -33,10 +36,14 @@
     "@types/node": "^20.19.43",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
     "eslint": "^9",
     "eslint-config-next": "16.3.7",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5"
-  }
+  },
+  "main": "desktop/main.cjs",
+  "author": "ARAM Group Tracker"
 }

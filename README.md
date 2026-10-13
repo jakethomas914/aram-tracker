@@ -73,6 +73,35 @@ button to the paste box. To stop re-pasting daily, register the project as a
 **Personal** project on the developer portal; personal keys are intended for a small
 private group and do not expire daily.
 
+## Windows app (double-click to run)
+
+The repo also builds a single portable `.exe` for people who will not touch a
+terminal. It bundles the app and its server, so nothing needs installing: double-click,
+and the dashboard opens in its own window.
+
+- **Where it comes from:** `.github/workflows/windows-app.yml` builds it on a Windows
+  runner. Every push to `main` attaches the `.exe` to the workflow run. Pushing a
+  version tag publishes it on the repository's **Releases** page:
+
+  ```bash
+  git tag v1.0.0
+  git push origin v1.0.0
+  ```
+
+  Share the Releases link; to update, push a new tag and send the new `.exe`.
+- **Their data:** match history and the saved Riot key live in
+  `%APPDATA%\ARAM Group Tracker\data`, not next to the `.exe`, so replacing the file
+  with a newer version keeps everything. The spreadsheet is written to
+  `Documents\ARAM Group Tracker`. **File → Open spreadsheet folder** jumps there.
+- **Background sync:** the app checks for new games on the watcher interval from
+  Settings while it is open. Close it and polling stops; the next launch catches up.
+- **First launch:** the `.exe` is not code-signed, so Windows SmartScreen shows
+  "Windows protected your PC". Click **More info → Run anyway**. Removing that prompt
+  needs a paid code-signing certificate.
+- **Try it locally:** `npm run build && npm run desktop:prepare && npm run desktop`
+  opens the desktop shell from source. `npm run desktop:build` builds the installer
+  and is meant to run on Windows (the workflow does this for you).
+
 ### Polling after every game
 
 ```bash

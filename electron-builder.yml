@@ -1,0 +1,17 @@
+appId: com.aramtracker.app
+productName: ARAM Group Tracker
+directories:
+  output: dist-desktop
+files:
+  - desktop/main.cjs
+  - package.json
+asar: true
+# Copies .next/standalone into resources/app-server. Run `npm run desktop:prepare`
+# first. See the hook for why this is not an extraResources entry.
+afterPack: desktop/after-pack.cjs
+win:
+  target:
+    - target: portable
+      arch: [x64]
+  artifactName: ARAM-Group-Tracker-${version}.${ext}
+  signAndEditExecutable: false
