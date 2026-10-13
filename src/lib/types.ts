@@ -226,6 +226,8 @@ export interface SyncState {
   lastSuccessAt: number | null;
   lastSummary: SyncSummary | null;
   lastError: string | null;
+  /** Riot answered 401/403 on the last sync: the key is invalid or has expired. */
+  keyRejected: boolean;
   running: boolean;
 }
 

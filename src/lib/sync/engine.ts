@@ -1,6 +1,6 @@
 import { EXPORT_DIR, WORKBOOK_FILENAME, isDemoMode } from "@/lib/config";
 import { writeWorkbookToDisk } from "@/lib/excel/workbook";
-import { MissingApiKeyError, RiotClient } from "@/lib/riot/client";
+import { MissingApiKeyError, RiotClient, isKeyRejection } from "@/lib/riot/client";
 import { createNameResolver, loadRuneTrees } from "@/lib/riot/ddragon";
 import { readDb, updateDb } from "@/lib/store/db";
 import {
@@ -70,6 +70,7 @@ async function resolveRoster(
         resolved: true,
       });
     } catch (error) {
+      if (isKeyRejection(error)) throw error;
       errors.push(
         `Could not resolve ${member.gameName}#${member.tagLine}: ${errorMessage(error)}`,
       );
@@ -201,6 +202,8 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
             });
             ids.forEach((id) => candidateIds.add(id));
           } catch (error) {
+            // A refused key fails every remaining call the same way, so stop here.
+            if (isKeyRejection(error)) throw error;
             summary.errors.push(
               `${queueLabel(queueId)} history for ${member.gameName}#${member.tagLine}: ${errorMessage(error)}`,
             );
@@ -289,21 +292,31 @@ export async function runSync(options: SyncOptions = {}): Promise<SyncSummary> {
 
     return await finish(summary);
   } catch (error) {
-    const message =
-      error instanceof MissingApiKeyError
+    const keyRejected = isKeyRejection(error);
+    const message = keyRejected
+      ? KEY_REJECTED_MESSAGE
+      : error instanceof MissingApiKeyError
         ? error.message
         : `Sync failed: ${errorMessage(error)}`;
     summary.errors.push(message);
-    return await finish(summary, message);
+    return await finish(summary, message, keyRejected);
   }
 }
 
-async function finish(summary: SyncSummary, error: string | null = null): Promise<SyncSummary> {
+const KEY_REJECTED_MESSAGE =
+  "Riot rejected the API key. Development keys expire every 24 hours — paste a fresh one in Settings.";
+
+async function finish(
+  summary: SyncSummary,
+  error: string | null = null,
+  keyRejected = false,
+): Promise<SyncSummary> {
   summary.finishedAt = Date.now();
   summary.durationMs = summary.finishedAt - summary.startedAt;
 
   await updateDb((db) => {
     db.syncState.running = false;
+    db.syncState.keyRejected = keyRejected;
     db.syncState.lastSyncAt = summary.finishedAt;
     db.syncState.lastSummary = summary;
     db.syncState.lastError = error ?? summary.errors[0] ?? null;

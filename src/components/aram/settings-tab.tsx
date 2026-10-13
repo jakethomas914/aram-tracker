@@ -44,6 +44,133 @@ const REGIONS: Array<{ value: RegionalRoute; label: string }> = [
   { value: "sea", label: "SEA (OCE, TW, VN, SG, PH, TH)" },
 ];
 
+const RIOT_PORTAL_URL = "https://developer.riotgames.com";
+
+function ApiKeyCard({
+  state,
+  onStateChange,
+}: {
+  state: DashboardState;
+  onStateChange: (next: DashboardState) => void;
+}) {
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const { source, preview } = state.apiKey;
+  const rejected = state.syncState.keyRejected;
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      const response = await fetch("/api/key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key }),
+      });
+      const payload = (await response.json()) as { state?: DashboardState; error?: string };
+      if (!response.ok || !payload.state) {
+        toast.error(payload.error ?? "Could not save the key.");
+        return;
+      }
+      setKey("");
+      onStateChange(payload.state);
+      toast.success("Key accepted by Riot.", {
+        description: "Add your friends on the Roster tab, then hit Sync now.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    setBusy(true);
+    try {
+      const response = await fetch("/api/key", { method: "DELETE" });
+      const payload = (await response.json()) as { state?: DashboardState };
+      if (payload.state) onStateChange(payload.state);
+      toast.success("Saved key removed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const statusTitle = rejected
+    ? "Riot rejected this key"
+    : state.demoMode
+      ? "Running on demo data"
+      : "Riot API key is active";
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex flex-wrap items-center gap-2">
+          <KeyRound className="size-4" />
+          Riot API key
+          <Badge variant={rejected ? "destructive" : "secondary"}>{statusTitle}</Badge>
+        </CardTitle>
+        <CardDescription>
+          {state.demoMode
+            ? "No key yet, so matches are generated locally in the real Match-V5 shape. Paste a key to track your actual games."
+            : source === "env"
+              ? `Using ${preview} from the RIOT_API_KEY environment variable. Pasting a key here overrides it.`
+              : `Using ${preview}, saved on this computer.`}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <form onSubmit={submit} className="space-y-2">
+          <Label htmlFor="riot-key">Paste a Riot API key</Label>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input
+              id="riot-key"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="RGAPI-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+              value={key}
+              onChange={(event) => setKey(event.target.value)}
+              className="min-w-0 font-mono text-xs"
+            />
+            <Button type="submit" disabled={busy || key.trim() === ""}>
+              {busy ? "Checking…" : "Save and test"}
+            </Button>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            The key is checked with Riot first and only saved if it works. No restart
+            needed.
+          </p>
+        </form>
+
+        <div className="text-muted-foreground space-y-1 text-xs">
+          <p>
+            Get one at{" "}
+            <a
+              href={RIOT_PORTAL_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary underline underline-offset-2"
+            >
+              developer.riotgames.com
+            </a>{" "}
+            after signing in with a Riot account.
+          </p>
+          <p>
+            The default development key stops working every 24 hours and Riot offers no
+            way to renew it automatically. To avoid pasting a new one daily, register
+            this as a <strong>Personal</strong> project on the same site: personal keys
+            are meant for a small private group and do not expire daily.
+          </p>
+        </div>
+
+        {source === "app" ? (
+          <Button variant="ghost" size="sm" onClick={remove} disabled={busy}>
+            Remove saved key
+          </Button>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function SettingsTab({
   state,
   onStateChange,
@@ -298,26 +425,9 @@ export function SettingsTab({
       </Card>
 
       <div className="space-y-4">
-        {state.demoMode ? (
-          <Alert>
-            <KeyRound className="size-4" />
-            <AlertTitle>Running on demo data</AlertTitle>
-            <AlertDescription>
-              <p>
-                No <code>RIOT_API_KEY</code> is set, so matches are generated locally in
-                the exact Match-V5 shape. To track your real games, put a key in{" "}
-                <code>.env.local</code> and restart:
-              </p>
-              <pre className={CODE_BLOCK}>
-                RIOT_API_KEY=RGAPI-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-              </pre>
-              <p>
-                Grab one from the Riot Developer Portal. Development keys expire every
-                24 hours.
-              </p>
-            </AlertDescription>
-          </Alert>
-        ) : (
+        <ApiKeyCard state={state} onStateChange={onStateChange} />
+
+        {!state.demoMode ? (
           <Alert>
             <KeyRound className="size-4" />
             <AlertTitle>Live Riot API mode</AlertTitle>
@@ -328,7 +438,7 @@ export function SettingsTab({
               match is re-checked against <code>info.queueId</code> before it is stored.
             </AlertDescription>
           </Alert>
-        )}
+        ) : null}
 
         <Card>
           <CardHeader>

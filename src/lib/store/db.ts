@@ -20,6 +20,7 @@ function emptyDatabase(): Database {
       lastSuccessAt: null,
       lastSummary: null,
       lastError: null,
+      keyRejected: false,
       running: false,
     },
   };

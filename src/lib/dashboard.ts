@@ -1,4 +1,12 @@
-import { EXPORT_DIR, WORKBOOK_FILENAME, isDemoMode } from "@/lib/config";
+import {
+  type ApiKeySource,
+  EXPORT_DIR,
+  WORKBOOK_FILENAME,
+  getApiKey,
+  getApiKeySource,
+  isDemoMode,
+} from "@/lib/config";
+import { previewKey } from "@/lib/store/api-key";
 import { loadStaticData } from "@/lib/riot/ddragon";
 import { getMatches, readDb } from "@/lib/store/db";
 import {
@@ -25,6 +33,8 @@ const MATCH_PAGE_SIZE = 120;
 
 export interface DashboardState {
   demoMode: boolean;
+  /** Which key is active, masked. The key itself never leaves the server. */
+  apiKey: { source: ApiKeySource | null; preview: string | null };
   /** Every queue the tracker knows how to follow, for the settings picker. */
   availableQueues: typeof ARAM_QUEUES;
   workbookPath: string;
@@ -57,6 +67,10 @@ export async function getDashboardState(): Promise<DashboardState> {
 
   return {
     demoMode: isDemoMode(),
+    apiKey: {
+      source: getApiKeySource(),
+      preview: getApiKey() ? previewKey(getApiKey() as string) : null,
+    },
     availableQueues: ARAM_QUEUES,
     workbookPath: `${EXPORT_DIR}/${WORKBOOK_FILENAME}`,
     ddragonVersion: staticData?.version ?? null,

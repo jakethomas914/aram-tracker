@@ -11,7 +11,7 @@
  */
 import { EXPORT_DIR, WORKBOOK_FILENAME, isDemoMode } from "@/lib/config";
 import { writeWorkbookToDisk } from "@/lib/excel/workbook";
-import { getSettings, invalidateCache, setSyncState } from "@/lib/store/db";
+import { getSettings, invalidateCache, readDb, setSyncState } from "@/lib/store/db";
 import { SyncBusyError, runSync } from "@/lib/sync/engine";
 import { queueLabel } from "@/lib/types";
 
@@ -23,10 +23,22 @@ function log(message: string): void {
   process.stdout.write(`[${new Date().toISOString()}] ${message}\n`);
 }
 
+let firstPass = true;
+
 /** Returns true when matches are still waiting to be backfilled. */
 async function once(): Promise<boolean> {
   // Another process (the web app) may have written the database since last pass.
   invalidateCache();
+
+  // Riot asks clients not to keep calling with a refused key. A fresh key saved in
+  // the app clears the flag; the first pass after a restart always retries, since
+  // the key may have been replaced in the environment.
+  const attempt = firstPass;
+  firstPass = false;
+  if (!attempt && (await readDb()).syncState.keyRejected) {
+    log("Riot rejected the API key; waiting for a new one in Settings");
+    return false;
+  }
 
   try {
     const summary = await runSync();

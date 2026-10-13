@@ -21,7 +21,7 @@ export class RiotApiError extends Error {
 
 export class MissingApiKeyError extends Error {
   constructor() {
-    super("RIOT_API_KEY is not set. Add it to .env.local to pull live matches.");
+    super("No Riot API key is set. Paste one in Settings to pull live matches.");
     this.name = "MissingApiKeyError";
   }
 }
@@ -131,6 +131,28 @@ export class RiotClient {
     return this.request<RawTimeline>(
       `/lol/match/v5/matches/${encodeURIComponent(matchId)}/timeline`,
     );
+  }
+}
+
+/** 401/403 from Riot mean the key itself was refused, not that one lookup failed. */
+export function isKeyRejection(error: unknown): boolean {
+  return error instanceof RiotApiError && (error.status === 401 || error.status === 403);
+}
+
+export type KeyCheck = "valid" | "rejected";
+
+/**
+ * Riot has no "is this key good" endpoint. Looking up an account that cannot exist
+ * does the job: a good key gets a 404, a bad or expired one gets a 401/403.
+ */
+export async function checkApiKey(key: string, region: RegionalRoute): Promise<KeyCheck> {
+  try {
+    await new RiotClient(region, key).getAccountByRiotId("keycheck", "zzzzz");
+    return "valid";
+  } catch (error) {
+    if (error instanceof RiotApiError && error.status === 404) return "valid";
+    if (isKeyRejection(error)) return "rejected";
+    throw error;
   }
 }
 

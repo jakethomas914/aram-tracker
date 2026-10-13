@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import { ARAM_QUEUES, DEFAULT_TRACKED_QUEUE_IDS } from "./types";
@@ -81,9 +82,31 @@ export const EXPORT_DIR = path.resolve(
 export const DB_PATH = path.join(DATA_DIR, "db.json");
 export const WORKBOOK_FILENAME = "aram-stats.xlsx";
 
+export const API_KEY_PATH = path.join(DATA_DIR, "riot-key.json");
+
+export type ApiKeySource = "app" | "env";
+
+/**
+ * A key pasted into the app lives on disk, so the web app and the watcher process
+ * both see a change without a restart. It wins over RIOT_API_KEY: the usual reason
+ * to paste a new one is that the one in the environment has expired.
+ */
+function readSavedKey(): string | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(API_KEY_PATH, "utf8")) as { key?: unknown };
+    return typeof parsed.key === "string" && parsed.key.trim() ? parsed.key.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+export function getApiKeySource(): ApiKeySource | null {
+  if (readSavedKey()) return "app";
+  return process.env.RIOT_API_KEY?.trim() ? "env" : null;
+}
+
 export function getApiKey(): string | null {
-  const key = process.env.RIOT_API_KEY?.trim();
-  return key ? key : null;
+  return readSavedKey() ?? (process.env.RIOT_API_KEY?.trim() || null);
 }
 
 /** True when we have no API key and fall back to generated demo matches. */

@@ -37,6 +37,7 @@ export function Dashboard({ initialState }: { initialState: DashboardState }) {
   const [syncing, setSyncing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [tick, setTick] = useState(0);
+  const [tab, setTab] = useState("overview");
   const syncingRef = useRef(false);
 
   // Re-render the "last synced" label without refetching.
@@ -226,7 +227,21 @@ export function Dashboard({ initialState }: { initialState: DashboardState }) {
           </div>
         </header>
 
-        {lastError ? (
+        {state.syncState.keyRejected ? (
+          <Alert variant="destructive" className="mb-6">
+            <AlertTriangle className="size-4" />
+            <AlertTitle>Your Riot API key has expired</AlertTitle>
+            <AlertDescription>
+              <p>
+                Riot stopped accepting the key, which happens every 24 hours with a
+                development key. Syncing is paused until you add a fresh one.
+              </p>
+              <Button size="sm" className="mt-2" onClick={() => setTab("settings")}>
+                Enter a new key
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : lastError ? (
           <Alert variant="destructive" className="mb-6">
             <AlertTriangle className="size-4" />
             <AlertTitle>Last sync reported a problem</AlertTitle>
@@ -234,7 +249,7 @@ export function Dashboard({ initialState }: { initialState: DashboardState }) {
           </Alert>
         ) : null}
 
-        <Tabs defaultValue="overview" className="gap-6">
+        <Tabs value={tab} onValueChange={(value) => setTab(String(value))} className="gap-6">
           <TabsList className="h-auto flex-wrap">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="matches">

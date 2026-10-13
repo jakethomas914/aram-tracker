@@ -55,22 +55,23 @@ watch a new game land and the spreadsheet rewrite itself.
 
 ### Tracking your real games
 
-1. Grab a key from the [Riot Developer Portal](https://developer.riotgames.com).
-   Development keys expire every 24 hours.
-2. Create `.env.local`:
-
-   ```bash
-   cp .env.example .env.local
-   ```
-
-   ```env
-   RIOT_API_KEY=RGAPI-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-   RIOT_REGION=americas
-   ```
-
-3. Restart the dev server, open the **Roster** tab, and add each friend's Riot ID
-   (`GameName#TAG`). Each one is resolved to a puuid through Account-V1.
+1. Sign in at the [Riot Developer Portal](https://developer.riotgames.com) and copy
+   your key.
+2. Open **Settings → Riot API key** in the app, paste it, and click **Save and
+   test**. The key is checked with Riot first and saved to `data/riot-key.json`
+   (git-ignored, never sent back to the browser). No restart needed, and the watcher
+   picks it up too. Setting `RIOT_API_KEY` in `.env.local` still works; a key pasted
+   in the app takes priority.
+3. Open the **Roster** tab and add each friend's Riot ID (`GameName#TAG`). Each one
+   is resolved to a puuid through Account-V1.
 4. Hit **Sync now**.
+
+Riot cannot renew keys automatically: the default development key stops working
+every 24 hours and only a signed-in human can generate the next one. When that
+happens the app pauses syncing and shows an "API key has expired" banner with a
+button to the paste box. To stop re-pasting daily, register the project as a
+**Personal** project on the developer portal; personal keys are intended for a small
+private group and do not expire daily.
 
 ### Polling after every game
 
